@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet" />
+
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#f6a50e",
+                        "background-light": "#f8f7f5",
+                        "background-dark": "#221c10",
+                        "accent-blue": "#2C3E50",
+                    },
+                    fontFamily: {
+                        display: ["Manrope"]
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Manrope', sans-serif;
+        }
+    </style>
+
+    <title>Perfil</title>
+
+</head>
+
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen pb-24">
+
+    <!-- HEADER -->
+
+    <header
+        class="sticky top-0 z-10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-primary/10">
+
+        <div class="flex items-center p-4 justify-center max-w-7xl mx-auto">
+
+            <h1 class="text-accent-blue dark:text-primary text-lg font-extrabold">
+                Perfil do Usuário
+            </h1>
+
+        </div>
+
+    </header>
+
+
+    <!-- MAIN -->
+
+    <main class="max-w-xl mx-auto p-6 space-y-6">
+
+        <!-- CARD PERFIL -->
+
+        <div class="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-100 dark:border-slate-700">
+
+            <div class="flex flex-col items-center gap-4">
+
+                <!-- AVATAR -->
+
+                <div
+                    class="w-20 h-20 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary text-xl font-bold">
+
+                    {{ usuario.nome[:2].upper() }}
+
+                </div>
+
+                <!-- NOME -->
+
+                <div class="text-center">
+
+                    <h2 class="text-xl font-bold text-accent-blue dark:text-white">
+                        {{ usuario.nome }}
+                    </h2>
+
+                    <p class="text-sm text-slate-400">
+                        Usuário do sistema
+                    </p>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- AÇÕES -->
+
+        <div
+            class="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-100 dark:border-slate-700 space-y-4">
+
+            <h3 class="font-bold text-accent-blue dark:text-white">
+                Configurações da Conta
+            </h3>
+
+
+            <!-- REDEFINIR SENHA -->
+
+            <a href="/redefinir-senha"
+                class="flex items-center justify-between p-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition">
+
+                <div class="flex items-center gap-3">
+
+                    <span class="material-symbols-outlined text-primary">
+                        lock_reset
+                    </span>
+
+                    <span class="font-semibold">
+                        Redefinir Senha
+                    </span>
+
+                </div>
+
+                <span class="material-symbols-outlined text-slate-400">
+                    chevron_right
+                </span>
+
+            </a>
+
+
+            <!-- SAIR -->
+
+            <a href="{{ url_for('auth.logout') }}"
+                class="flex items-center justify-between p-4 rounded-lg border border-red-200 hover:bg-red-50 transition">
+
+                <div class="flex items-center gap-3">
+
+                    <span class="material-symbols-outlined text-red-500">
+                        logout
+                    </span>
+
+                    <span class="font-semibold text-red-500">
+                        Sair da Conta
+                    </span>
+
+                </div>
+
+                <span class="material-symbols-outlined text-red-400">
+                    chevron_right
+                </span>
+
+            </a>
+
+        </div>
+
+    </main>
+
+
+    <!-- NAVBAR -->
+
+    {% include 'base/navbar.html' %}
+
+</body>
+
+</html>

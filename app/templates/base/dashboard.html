@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Relatórios</title>
+
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#f6a50e",
+                        secondary: "#2c3e50",
+                        "background-light": "#f8f7f5",
+                        "background-dark": "#221c10"
+                    },
+                    fontFamily: {
+                        display: ["Manrope"]
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.5rem",
+                        lg: "1rem",
+                        xl: "1.5rem",
+                        full: "9999px"
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Manrope', sans-serif;
+        }
+
+        @media print {
+
+            nav,
+            button,
+            #filtros,
+            .material-symbols-outlined {
+                display: none !important;
+            }
+
+            body {
+                background: white;
+            }
+
+        }
+    </style>
+
+</head>
+
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen pb-24">
+
+    <!-- HEADER -->
+
+    <header
+        class="sticky top-0 z-10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-primary/10">
+
+        <div class="flex items-center p-4 justify-between max-w-7xl mx-auto">
+
+            <div onclick="history.back()"
+                class="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary cursor-pointer">
+
+                <span class="material-symbols-outlined">arrow_back</span>
+
+            </div>
+
+            <h2 class="text-secondary dark:text-primary text-lg font-extrabold flex-1 text-center">
+                Relatórios
+            </h2>
+
+        </div>
+
+        <!-- BUSCA -->
+
+        <div class="px-4 pb-4 max-w-7xl mx-auto">
+
+            <label class="flex flex-col w-full h-12">
+
+                <div class="flex w-full flex-1 items-stretch rounded-xl h-full shadow-sm">
+
+                    <div
+                        class="text-primary flex bg-white dark:bg-slate-800 items-center justify-center pl-4 rounded-l-xl border-y border-l border-primary/20">
+
+                        <span class="material-symbols-outlined">search</span>
+
+                    </div>
+
+                    <input id="filtroVendedor" placeholder="Pesquisar vendedor..."
+                        class="form-input flex w-full flex-1 resize-none overflow-hidden rounded-xl text-slate-900 dark:text-slate-100 focus:outline-0 focus:ring-2 focus:ring-primary border-y border-r border-primary/20 bg-white dark:bg-slate-800 h-full placeholder:text-slate-400 px-4 rounded-l-none pl-2 text-base" />
+
+                </div>
+
+            </label>
+
+        </div>
+
+    </header>
+
+
+    <!-- MAIN -->
+
+    <main class="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-6">
+
+
+        <!-- CARDS -->
+        <section class="grid grid-cols-1 gap-4">
+            <div
+                class="flex flex-col gap-2 rounded-xl p-6 bg-white dark:bg-secondary/40 border border-slate-100 dark:border-slate-700 shadow-sm">
+                <div class="flex items-center gap-2 text-primary">
+                    <span class="material-symbols-outlined text-xl">payments</span>
+                    <p class="text-xs font-bold uppercase tracking-wider">Total Faturado</p>
+                </div>
+                <p id="cardValorTotal" class="text-3xl font-bold text-secondary dark:text-white">R$ 00,00</p>
+                <!-- <span class="text-xs text-green-500 font-bold">+12% em relação a ontem</span> -->
+            </div>
+            <div
+                class="flex flex-col gap-2 rounded-xl p-6 bg-white dark:bg-secondary/40 border border-slate-100 dark:border-slate-700 shadow-sm">
+                <div class="flex items-center gap-2 text-primary">
+                    <span class="material-symbols-outlined text-xl">takeout_dining</span>
+                    <p class="text-xs font-bold uppercase tracking-wider">Total Quentinhas</p>
+                </div>
+                <p id="cardTotalVendas" class="text-3xl font-bold text-secondary dark:text-white">0</p>
+                <!-- <span class="text-xs text-slate-500 dark:text-slate-400 font-medium">Valor vendido</span> -->
+            </div>
+            <div
+                class="flex flex-col gap-2 rounded-xl p-6 bg-white dark:bg-secondary/40 border border-slate-100 dark:border-slate-700 shadow-sm">
+                <div class="flex items-center gap-2 text-primary">
+                    <span class="material-symbols-outlined text-xl">avg_time</span>
+                    <p class="text-xs font-bold uppercase tracking-wider">Total Pagos</p>
+                </div>
+                <p id="cardPagos" class="text-3xl font-bold text-secondary dark:text-white">0</p>
+            </div>
+            <div
+                class="flex flex-col gap-2 rounded-xl p-6 bg-white dark:bg-secondary/40 border border-slate-100 dark:border-slate-700 shadow-sm">
+                <div class="flex items-center gap-2 text-primary">
+                    <span class="material-symbols-outlined text-xl">avg_time</span>
+                    <p class="text-xs font-bold uppercase tracking-wider">Total Pendente</p>
+                </div>
+                <p id="cardPendentes" class="text-3xl font-bold text-secondary dark:text-white">0</p>
+            </div>
+
+            <div
+                class="flex flex-col gap-2 rounded-xl p-6 bg-white dark:bg-secondary/40 border border-slate-100 dark:border-slate-700 shadow-sm">
+                <div class="flex items-center gap-2 text-primary">
+                    <span class="material-symbols-outlined text-xl">avg_time</span>
+                    <p class="text-xs font-bold uppercase tracking-wider">Total Entregues</p>
+                </div>
+                <p id="cardEntregues" class="text-3xl font-bold text-secondary dark:text-white">0</p>
+            </div>
+        </section>
+
+
+
+        <!-- GRAFICOS -->
+
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+            <div
+                class="rounded-xl p-5 bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700">
+
+                <h3 class="text-accent-blue dark:text-white text-lg font-bold mb-4">
+                    Vendas por Dia
+                </h3>
+
+                <div class="relative h-64">
+                    <canvas id="graficoVendasDia"></canvas>
+                </div>
+
+            </div>
+
+
+            <div
+                class="rounded-xl p-5 bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700">
+
+                <h3 class="text-accent-blue dark:text-white text-lg font-bold mb-4">
+                    Status Pagamento
+                </h3>
+
+                <div class="relative h-64">
+                    <canvas id="graficoPagamento"></canvas>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- RANKING -->
+
+        <section
+            class="rounded-xl overflow-hidden bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700">
+
+            <div class="p-5 border-b border-slate-50 dark:border-slate-700">
+
+                <h2 class="text-accent-blue dark:text-white text-lg font-bold">
+                    Ranking de Vendedores
+                </h2>
+
+            </div>
+
+            <div id="rankingVendedores" class="divide-y divide-slate-50 dark:divide-slate-700/50 p-4 space-y-2">
+
+            </div>
+
+        </section>
+
+        <!-- 5. Action Buttons -->
+        <section class="flex flex-col gap-3 mt-4 md:flex-row md:justify-end">
+            <button id="exportarPDF"
+                class="flex items-center justify-center gap-3 bg-secondary text-white py-4 rounded-xl font-bold hover:bg-secondary/90 transition-all shadow-md">
+
+                <span class="material-symbols-outlined">picture_as_pdf</span>
+                Exportar PDF
+
+            </button>
+
+            <button id="exportarExcel"
+                class="flex items-center justify-center gap-3 bg-primary text-white py-4 px-6 rounded-xl font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20">
+                <span class="material-symbols-outlined">description</span>
+                Exportar Excel
+            </button>
+        </section>
+
+    </main>
+
+
+    {% include 'base/navbar.html' %}
+
+    <script src="{{ url_for('static', filename='js/base/dashboard.js') }}"></script>
+
+
+</body>
+
+</html>

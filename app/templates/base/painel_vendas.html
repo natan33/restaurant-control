@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet" />
+
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet" />
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#f6a50e",
+                        "background-light": "#f8f7f5",
+                        "background-dark": "#221c10",
+                        "accent-blue": "#2C3E50",
+                    },
+                    fontFamily: {
+                        display: ["Manrope"]
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.5rem",
+                        lg: "1rem",
+                        xl: "1.5rem",
+                        full: "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Manrope', sans-serif;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+
+    <title>Xinxim de Bofe - Portal</title>
+
+</head>
+
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen pb-24">
+
+    <!-- HEADER -->
+
+    <header
+        class="sticky top-0 z-10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-primary/10">
+
+        <div class="flex items-center p-4 justify-between max-w-7xl mx-auto">
+
+            <h1
+                class="text-accent-blue dark:text-primary text-lg font-extrabold leading-tight tracking-tight flex-1 text-center">
+                Social Quentinhas
+            </h1>
+
+            <!-- <div class="flex w-10 items-center justify-end">
+                <button class="relative flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <span class="material-symbols-outlined">notifications</span>
+                    <span class="absolute top-2 right-2 flex h-2 w-2 rounded-full bg-red-500"></span>
+                </button>
+            </div> -->
+
+        </div>
+    </header>
+
+    <!-- MAIN -->
+
+    <main class="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-6">
+
+        <!-- SUMMARY -->
+
+        <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+            <div
+                class="flex flex-col gap-2 rounded-xl p-5 bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700">
+
+                <div class="flex items-center justify-between">
+                    <p class="text-slate-500 dark:text-slate-400 text-sm font-semibold uppercase tracking-wider">
+                        Total Vendido
+                    </p>
+                    <span class="material-symbols-outlined text-primary">payments</span>
+                </div>
+
+                <p class="text-accent-blue dark:text-white tracking-tight text-3xl font-extrabold">
+                    R$ {{ "{:,.2f}".format(total_vendido).replace(",", "X").replace(".", ",").replace("X", ".") }}
+                </p>
+
+
+                <div class="flex items-center gap-1">
+                    <span class="material-symbols-outlined text-emerald-500 text-sm">trending_up</span>
+                    <p class="text-emerald-500 text-sm font-bold">+12% este mês</p>
+                </div>
+
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 lg:col-span-2">
+
+                <div
+                    class="flex flex-col gap-2 rounded-xl p-5 bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700">
+                    <p class="text-slate-500 dark:text-slate-400 text-xs font-semibold uppercase">
+                        Total Pago
+                    </p>
+                    <p class="text-accent-blue dark:text-white text-xl font-bold">
+                        R$ {{ "{:,.2f}".format(total_pago).replace(",", "X").replace(".", ",").replace("X", ".") }}
+                    </p>
+                    <p class="text-emerald-500 text-xs font-medium">{{ percentual_pago }}% concluído</p>
+                </div>
+
+                <div
+                    class="flex flex-col gap-2 rounded-xl p-5 bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700">
+                    <p class="text-slate-500 dark:text-slate-400 text-xs font-semibold uppercase">
+                        Pendente
+                    </p>
+                    <p class="text-red-500 text-xl font-bold">
+                        R$ {{ "{:,.2f}".format(total_pendente).replace(",", "X").replace(".", ",").replace("X", ".") }}
+                    </p>
+                    <p class="text-slate-400 text-xs font-medium">{{ qtd_faturas }} quentinhas</p>
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- CHART -->
+
+        <section
+            class="rounded-xl p-5 bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700">
+            <h2 class="text-accent-blue dark:text-white text-lg font-bold mb-6">Vendas por Dia</h2>
+
+            <div class="relative h-48 w-full">
+                <canvas id="meuGraficoVendas"></canvas>
+            </div>
+        </section>
+
+        <!-- RANKING -->
+
+        <!-- RANKING TOP 3 -->
+        <section
+            class="rounded-xl overflow-hidden bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700">
+
+            <div class="p-5 border-b border-slate-50 dark:border-slate-700 flex justify-between items-center">
+                <h2 class="text-accent-blue dark:text-white text-lg font-bold">
+                    Ranking de Jovens
+                </h2>
+                <!-- Link para tela completa -->
+                <a href="{{ url_for('main.ranking_completo') }}"
+                    class="text-primary text-sm font-semibold hover:underline">
+                    Ver ranking completo
+                </a>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr
+                            class="text-slate-400 text-[10px] uppercase font-bold tracking-widest bg-slate-50 dark:bg-slate-900/50">
+                            <th class="px-5 py-3">Pos</th>
+                            <th class="px-5 py-3">Vendedor</th>
+                            <th class="px-5 py-3 text-right">Qtde</th>
+                            <th class="px-5 py-3 text-right">Total Pago</th>
+                            <th class="px-5 py-3 text-right">Total Pendente</th>
+                            <th class="px-5 py-3 text-right">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50 dark:divide-slate-700/50">
+                        {% for item in ranking[:3] %} <!-- Exibe somente top 3 -->
+                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                            <td class="py-4 px-4 text-center">
+                                {% if loop.index == 1 %}
+                                <span class="text-2xl">🥇</span>
+                                {% elif loop.index == 2 %}
+                                <span class="text-2xl">🥈</span>
+                                {% elif loop.index == 3 %}
+                                <span class="text-2xl">🥉</span>
+                                {% else %}
+                                <span class="text-slate-400 font-bold text-sm">{{ loop.index }}º</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-4 px-4">
+                                <div class="flex items-center gap-3">
+                                    <div
+                                        class="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                                        {{ item.nome[:2].upper() }}
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-bold text-slate-700 dark:text-slate-200">{{ item.nome }}
+                                        </p>
+                                        <p class="text-[10px] text-slate-400 uppercase tracking-wider">Jovem</p>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-4 px-4 text-center">
+                                <span
+                                    class="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-1 rounded-md text-xs font-bold">
+                                    {{ item.qtde_vendida }}
+                                </span>
+                            </td>
+                            <td class="px-5 py-4 text-right text-green-600">R$ {{
+                                "{:,.2f}".format(item.total_pago).replace(",", "X").replace(".", ",").replace("X", ".")
+                                }}</td>
+                            <td class="px-5 py-4 text-right text-red-600">R$ {{
+                                "{:,.2f}".format(item.total_pendente).replace(",", "X").replace(".", ",").replace("X",
+                                ".")
+                                }}</td>
+                            <td class="px-5 py-4 text-right font-extrabold text-primary">R$ {{
+                                "{:,.2f}".format(item.total).replace(",", "X").replace(".", ",").replace("X", ".") }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    {% include 'base/navbar.html' %}
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async function () {
+            const ctx = document.getElementById('meuGraficoVendas').getContext('2d');
+
+            try {
+                const response = await fetch('/api/vendas-semanais');
+                const data = await response.json();
+
+                new Chart(ctx, {
+                    type: 'bar', // Tipo de gráfico: barras
+                    data: {
+                        labels: data.labels, // ["Seg", "Ter", ...] vindo do Python
+                        datasets: [{
+                            label: 'Vendas (R$)',
+                            data: data.valores, // [100.0, 50.0, ...] vindo do Python
+                            backgroundColor: '#f6a50e', // Sua cor primária (Laranja)
+                            borderRadius: 8, // Bordas arredondadas no topo
+                            borderSkipped: false,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false } // Esconde a legenda para ficar limpo
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                display: false, // Esconde os números do lado para um visual moderno
+                                grid: { display: false }
+                            },
+                            x: {
+                                grid: { display: false },
+                                ticks: {
+                                    color: '#94a3b8', // Cor slate-400 para os dias
+                                    font: { weight: 'bold', size: 10 }
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error("Erro ao carregar o Chart.js:", e);
+            }
+        });
+    </script>
+
+
+</body>
+
+</html>

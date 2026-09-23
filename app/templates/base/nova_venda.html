@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&amp;display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#f6a50e", // Matching required yellow/mustard
+                        "secondary": "#2c3e50", // Required charcoal/dark blue
+                        "background-light": "#f4f7f6", // Required light grey-green
+                        "background-dark": "#1a1c1e",
+                        "surface": "#ffffff"
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "1rem",
+                        "xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Manrope', sans-serif;
+        }
+
+        /* Custom radio styling to match theme */
+        .custom-radio:checked {
+            background-color: #f6a50e;
+            border-color: #f6a50e;
+        }
+    </style>
+    <style>
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+</head>
+
+<body class="bg-background-light dark:bg-background-dark min-h-screen text-secondary font-display">
+    <form method="POST"
+      action="{{ url_for('main.editar_venda', venda_id=venda.id) if venda else url_for('main.nova_venda') }}"
+      id="form-nova-venda"
+      data-venda-id="{{ venda.id if venda else '' }}">
+        {{ form.hidden_tag() }}
+        <div class="max-w-md mx-auto min-h-screen flex flex-col bg-background-light dark:bg-background-dark">
+            <!-- TopAppBar Header -->
+            <header class="sticky top-0 z-10 flex items-center bg-surface dark:bg-slate-900 px-4 py-4 shadow-sm">
+                <button id="retorno"
+                    class="flex items-center justify-center size-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-secondary dark:text-slate-100">
+                    <span class="material-symbols-outlined">arrow_back</span>
+                </button>
+                <h1 class="ml-2 text-xl font-bold tracking-tight text-secondary dark:text-slate-100">Nova Venda</h1>
+            </header>
+            <main class="flex-1 p-4 pb-32">
+                <div class="space-y-6">
+
+                    <section class="space-y-2">
+                        <label class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Nome do
+                            Comprador</label>
+                        <div class="relative">
+                            {{ form.comprador_nome(
+                            class="w-full h-14 px-4 rounded-xl border-none bg-surface dark:bg-slate-800 shadow-sm
+                            text-secondary dark:text-slate-100 focus:ring-2 focus:ring-primary",
+                            placeholder="Nome do comprador"
+                            ) }}
+                            <span
+                                class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">expand_more</span>
+                        </div>
+                    </section>
+
+
+                    <!-- Product Selection -->
+                    <section class="space-y-2">
+                        <label
+                            class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Produto</label>
+                        <div class="relative">
+                            <input id="produto_search" type="text" value="{{ produto_nome if venda else '' }}"
+                                class="w-full h-14 pl-4 pr-10 rounded-xl border-none bg-surface dark:bg-slate-800 shadow-sm text-secondary dark:text-slate-100 focus:ring-2 focus:ring-primary"
+                                placeholder="Digite o nome do produto" autocomplete="off">
+
+                            <input type="hidden" name="produto_id" id="produto_id"
+                                value="{{ venda.produto_id if venda else '' }}">
+
+                            <div id="produto_resultados"
+                                class="absolute left-0 right-0 bg-white dark:bg-slate-800 shadow-lg border border-slate-200 dark:border-slate-700 rounded-lg mt-1 hidden z-50">
+                            </div>
+                        </div>
+                    </section>
+                    <!-- Quantity -->
+                    <section class="space-y-2">
+                        <label
+                            class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Quantidade</label>
+                        {{ form.quantidade(
+                        class="w-full h-14 px-4 rounded-xl border-none bg-surface dark:bg-slate-800 shadow-sm
+                        text-secondary dark:text-slate-100 focus:ring-2 focus:ring-primary",
+                        placeholder="0"
+                        ) }}
+                    </section>
+                    <!-- Seller Selection -->
+                    <section class="space-y-2">
+                        <label
+                            class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Vendedor</label>
+                        <div class="relative">
+
+                            <input type="text" id="vendedor_search" name="vendedor_nome"
+                                value="{{ vendedor_nome if venda else '' }}" placeholder="Digite ou busque vendedor..."
+                                class="w-full h-14 px-4 rounded-xl border-none bg-surface dark:bg-slate-800 shadow-sm
+       text-secondary dark:text-slate-100 focus:ring-2 focus:ring-primary">
+
+                            <span
+                                class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">expand_more</span>
+
+                            {{ form.vendedor_id(type="hidden", id="vendedor_id", value=venda.vendedor_id if venda else
+                            '') }}
+
+                            <!-- dropdown resultados -->
+                            <div id="vendedor_resultados"
+                                class="absolute w-full bg-white dark:bg-slate-800 shadow-lg rounded-xl mt-2 hidden max-h-60 overflow-y-auto">
+                            </div>
+                        </div>
+                    </section>
+                    <!-- Seller Type (Segmented Control style) -->
+                    <section class="space-y-3">
+                        <label class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Tipo de
+                            Vendedor</label>
+                        <div class="grid grid-cols-3 gap-2 bg-slate-200/50 dark:bg-slate-800 p-1 rounded-xl">
+                            {% for radio in form.tipo_vendedor %}
+
+                            <label class="relative cursor-pointer">
+
+                                {{ radio(class="peer sr-only") }}
+
+                                <div
+                                    class="flex items-center justify-center py-2 text-sm font-medium rounded-lg transition-all peer-checked:bg-white dark:peer-checked:bg-slate-700 peer-checked:text-primary peer-checked:shadow-sm text-slate-500">
+                                    {{ radio.label.text }}
+                                </div>
+
+                            </label>
+
+                            {% endfor %}
+                        </div>
+                    </section>
+                    <!-- Payment Status -->
+                    <section class="space-y-3">
+                        <label class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Status de
+                            Pagamento</label>
+                        <div class="flex gap-4">
+
+                            {% for radio in form.status_pagamento %}
+
+                            <label class="flex items-center gap-2 cursor-pointer group">
+
+                                {{ radio(class="w-5 h-5 border-2 border-slate-300 text-primary focus:ring-primary
+                                custom-radio") }}
+
+                                <span class="text-sm font-medium text-secondary dark:text-slate-200">
+                                    {{ radio.label.text }}
+                                </span>
+
+                            </label>
+
+                            {% endfor %}
+
+                        </div>
+                    </section>
+
+                    <section class="space-y-2">
+                        <label class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">
+                            Data da Venda (opcional)
+                        </label>
+                        {{ form.data_venda(
+                        class="w-full h-14 px-4 rounded-xl border-none bg-surface dark:bg-slate-800 shadow-sm
+                        text-secondary dark:text-slate-100 focus:ring-2 focus:ring-primary"
+                        ) }}
+                    </section>
+                    <!-- Observação -->
+                    <section class="space-y-2">
+                        <label
+                            class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Observação</label>
+                        {{ form.observacao(
+                        class="w-full h-24 px-4 py-2 rounded-xl border-none bg-surface dark:bg-slate-800 shadow-sm
+                        text-secondary dark:text-slate-100 focus:ring-2 focus:ring-primary",
+                        placeholder="Observações (opcional)"
+                        ) }}
+                    </section>
+                    <!-- Total (Calculated) -->
+                    <section class="space-y-2 pt-4 border-t border-slate-200 dark:border-slate-800">
+                        <label class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Total da
+                            Venda</label>
+                        <div
+                            class="w-full h-14 px-4 rounded-xl bg-slate-100 dark:bg-slate-800/50 flex items-center justify-between">
+                            <span class="text-slate-500 font-medium">Preço x Qtd</span>
+                            <span class="text-xl font-bold text-secondary dark:text-slate-100">R$ 0,00</span>
+                        </div>
+                    </section>
+                </div>
+            </main>
+            <!-- Fixed Footer Action -->
+            <footer
+                class="fixed bottom-0 left-0 right-0 max-w-md mx-auto p-4 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md">
+                <button type="submit"
+                    class="w-full h-14 bg-primary hover:bg-primary/90 text-white font-bold text-lg rounded-xl shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    {{ "Salvar Alterações" if venda else "Registrar Venda" }}
+                </button>
+            </footer>
+        </div>
+
+        <script src="{{ url_for('static', filename='js/base/nova_venda.js') }}"></script>
+</body>
+
+</html>

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#f6a50e",
+                        "background-light": "#f8f7f5",
+                        "background-dark": "#221c10",
+                        "accent-blue": "#2C3E50",
+                    },
+                    fontFamily: {
+                        display: ["Manrope"]
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Manrope', sans-serif;
+        }
+    </style>
+
+    <title>Redefinir Senha</title>
+
+</head>
+
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen pb-24">
+
+    <!-- HEADER -->
+
+    <header
+        class="sticky top-0 z-10 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-primary/10">
+
+        <div class="flex items-center p-4 justify-between max-w-xl mx-auto">
+
+            <a href="/perfil" class="material-symbols-outlined text-primary">
+                arrow_back
+            </a>
+
+            <h1 class="text-accent-blue dark:text-primary text-lg font-extrabold">
+                Redefinir Senha
+            </h1>
+
+            <div class="w-6"></div>
+
+        </div>
+
+    </header>
+
+
+    <!-- MAIN -->
+
+    <main class="max-w-xl mx-auto p-6">
+
+        <div class="bg-white dark:bg-slate-800 rounded-xl p-6 shadow-sm border border-slate-100 dark:border-slate-700">
+
+            <form method="POST" class="space-y-5">
+
+                {{ form.hidden_tag() }}
+
+                <!-- SENHA ATUAL -->
+
+                <div>
+                    <label class="text-sm font-semibold">
+                        {{ form.senha_atual.label.text }}
+                    </label>
+
+                    {{ form.senha_atual(class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white
+                    dark:bg-slate-900 px-4 py-3 focus:ring-2 focus:ring-primary outline-none") }}
+
+                    {% for error in form.senha_atual.errors %}
+                    <p class="text-red-500 text-xs mt-1">{{ error }}</p>
+                    {% endfor %}
+                </div>
+
+
+                <!-- NOVA SENHA -->
+
+                <div>
+                    <label class="text-sm font-semibold">
+                        {{ form.nova_senha.label.text }}
+                    </label>
+
+                    {{ form.nova_senha(class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white
+                    dark:bg-slate-900 px-4 py-3 focus:ring-2 focus:ring-primary outline-none") }}
+
+                    {% for error in form.nova_senha.errors %}
+                    <p class="text-red-500 text-xs mt-1">{{ error }}</p>
+                    {% endfor %}
+                </div>
+
+
+                <!-- CONFIRMAR -->
+
+                <div>
+                    <label class="text-sm font-semibold">
+                        {{ form.confirmar_senha.label.text }}
+                    </label>
+
+                    {{ form.confirmar_senha(class="w-full rounded-lg border border-slate-200 dark:border-slate-700
+                    bg-white dark:bg-slate-900 px-4 py-3 focus:ring-2 focus:ring-primary outline-none") }}
+
+                    {% for error in form.confirmar_senha.errors %}
+                    <p class="text-red-500 text-xs mt-1">{{ error }}</p>
+                    {% endfor %}
+                </div>
+
+
+                <!-- BOTÃO -->
+
+                {{ form.submit(class="w-full bg-primary text-white py-3 rounded-lg font-bold hover:opacity-90
+                transition") }}
+
+            </form>
+
+        </div>
+
+    </main>
+
+
+    {% include 'base/navbar.html' %}
+
+</body>
+
+</html>

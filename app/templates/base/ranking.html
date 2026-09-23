@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+
+<html class="light" lang="pt-br">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+    <title>Ranking de Vendedores</title>
+
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#f6a50e",
+                        secondary: "#2c3e50",
+                        "background-light": "#f8f7f5",
+                        "background-dark": "#221c10"
+                    },
+                    fontFamily: {
+                        display: ["Manrope"]
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.5rem",
+                        lg: "1rem",
+                        xl: "1.5rem",
+                        full: "9999px"
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Manrope', sans-serif;
+        }
+    </style>
+
+</head>
+
+
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen flex flex-col">
+
+
+    <!-- HEADER -->
+
+    <header
+        class="sticky top-0 z-20 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-primary/10">
+
+        <div class="flex items-center p-4 justify-between">
+
+            <div onclick="history.back()"
+                class="text-secondary dark:text-primary flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 cursor-pointer">
+
+                <span class="material-symbols-outlined">arrow_back</span>
+
+            </div>
+
+            <h2 class="text-secondary dark:text-slate-100 text-xl font-extrabold flex-1 px-4">
+
+                Ranking de Vendedores
+
+            </h2>
+
+        </div>
+
+
+        <!-- SEARCH -->
+
+        <div class="px-4 pb-4">
+
+            <label class="flex flex-col w-full h-12">
+
+                <div class="flex w-full flex-1 items-stretch rounded-xl h-full shadow-sm">
+
+                    <div
+                        class="text-primary flex bg-white dark:bg-slate-800 items-center justify-center pl-4 rounded-l-xl border-y border-l border-primary/20">
+
+                        <span class="material-symbols-outlined">search</span>
+
+                    </div>
+
+                    <input id="filtroVendedor"
+                        class="form-input flex w-full flex-1 rounded-xl text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary border-y border-r border-primary/20 bg-white dark:bg-slate-800 px-4 rounded-l-none pl-2"
+                        placeholder="Pesquisar vendedor..." />
+
+                </div>
+
+            </label>
+
+        </div>
+
+
+        <!-- FILTROS -->
+
+        <div class="flex gap-2 px-4 pb-4 overflow-x-auto">
+
+            <button
+                class="filtroTipo flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-primary/10 border border-primary/20 px-3 whitespace-nowrap"
+                data-tipo="todos">
+
+                <span class="text-secondary dark:text-primary text-sm font-semibold">
+                    Todos
+                </span>
+
+            </button>
+
+            <button
+                class="filtroTipo flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-primary/10 border border-primary/20 px-3 whitespace-nowrap"
+                data-tipo="Jovem">
+
+                <span class="text-secondary dark:text-primary text-sm font-semibold">
+                    Jovem
+                </span>
+
+            </button>
+
+            <button
+                class="filtroTipo flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-primary/10 border border-primary/20 px-3 whitespace-nowrap"
+                data-tipo="Membro">
+
+                <span class="text-secondary dark:text-primary text-sm font-semibold">
+                    Membro
+                </span>
+
+            </button>
+
+        </div>
+
+    </header>
+
+
+
+    <!-- CONTEUDO -->
+
+    <main class="flex-1 overflow-y-auto">
+
+        <div id="podio" class="grid grid-cols-3 gap-3 px-4 pt-4"></div>
+
+        <div class="px-4 py-2 flex justify-between items-center">
+            <h3 class="text-secondary dark:text-slate-100 font-bold text-lg">
+                Ranking Geral
+            </h3>
+        </div>
+
+        <!-- LISTA RANKING -->
+
+        <div id="ranking_lista" class="flex flex-col gap-3 px-4 pb-24"></div>
+
+        <div id="loader" class="flex justify-center py-6 hidden">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+
+
+    </main>
+
+
+
+    {% include 'base/navbar.html' %}
+
+
+
+    <script src="{{ url_for('static', filename='js/base/ranking.js') }}"></script>
+
+</body>
+
+</html>
