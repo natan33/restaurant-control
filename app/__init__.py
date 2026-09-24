@@ -41,6 +41,17 @@ def create_app(config_name: str):
 
     # Carrega a configuração do dicionário
     app.config.from_object(config[config_name])
+    app.config.setdefault(
+        "TENANCY_EXEMPT_ENDPOINTS",
+        {
+            "auth.login",
+            "auth.logout",
+            "auth.perfil",
+            "auth.redefinir_senha",
+            "tenancy.select_organization",
+            "tenancy.onboarding",
+        },
+    )
 
     # Inicializa lógica personalizada da classe de config
     config[config_name].init_app(app)
@@ -61,9 +72,13 @@ def create_app(config_name: str):
     # Registro do user_loader para o Flask-Login
     # from app.models.auth.user import User
     from app.models.auth.user import User
+    from app.models import tenancy  # noqa: F401 - register tenancy models in metadata
     @login_manager.user_loader
     def load_user(user_id):
         return User.query.get(int(user_id))
+
+    from app.core.tenancy import register_tenancy_context
+    register_tenancy_context(app)
 
     # Inicializa o Celery
     # celery = make_celery(app)

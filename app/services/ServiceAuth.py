@@ -1,5 +1,5 @@
 import random
-from flask import flash, redirect, render_template, url_for
+from flask import flash, redirect, render_template, session, url_for
 from flask_login import login_user, logout_user
 from app.models.auth.user import User
 from app import db
@@ -38,6 +38,7 @@ class ServiceAutentication:
 
     def logout(self):
         logout_user()
+        session.pop("organization_id", None)
         logger.info("Usuário realizou logout.")
         return redirect(url_for('auth.login'))
     

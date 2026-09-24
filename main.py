@@ -5,6 +5,7 @@ import os
 # IMPORTANTE: Importar todos os módulos de modelos aqui
 from app.models.auth.user import *
 from app.models.pages.gerenciamento_vendas import *
+from app.models.tenancy import *
 # from app.models.pages.students import *
 # from app.models.pages.academy import *
 # from app.models.pages.finance import *
