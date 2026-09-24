@@ -90,33 +90,54 @@
                     </section>
 
 
-                    <!-- Product Selection -->
-                    <section class="space-y-2">
-                        <label
-                            class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Produto</label>
-                        <div class="relative">
-                            <input id="produto_search" type="text" value="{{ produto_nome if venda else '' }}"
-                                class="w-full h-14 pl-4 pr-10 rounded-xl border-none bg-surface dark:bg-slate-800 shadow-sm text-secondary dark:text-slate-100 focus:ring-2 focus:ring-primary"
-                                placeholder="Digite o nome do produto" autocomplete="off">
-
-                            <input type="hidden" name="produto_id" id="produto_id"
-                                value="{{ venda.produto_id if venda else '' }}">
-
-                            <div id="produto_resultados"
-                                class="absolute left-0 right-0 bg-white dark:bg-slate-800 shadow-lg border border-slate-200 dark:border-slate-700 rounded-lg mt-1 hidden z-50">
-                            </div>
+                    <section class="space-y-3" id="itens-venda">
+                        <div class="flex items-center justify-between">
+                            <label class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Produtos</label>
+                            <button type="button" id="adicionar-item" class="min-h-11 px-4 rounded-xl bg-secondary text-white font-bold text-sm">
+                                + Adicionar produto
+                            </button>
                         </div>
+                        <div id="linhas-itens" class="space-y-3" data-items='{{ (venda.items|map(attribute="produto_id")|list if venda and venda.items else ([venda.produto_id] if venda else []))|tojson }}'>
+                            {% if venda and venda.items %}
+                                {% for item in venda.items %}
+                                <div class="item-venda rounded-xl bg-surface dark:bg-slate-800 p-3 shadow-sm space-y-2">
+                                    <div class="flex gap-2 items-start">
+                                        <select class="item-produto flex-1 min-h-14 rounded-xl border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800" required>
+                                            <option value="">Selecione o produto</option>
+                                            {% for produto in form.produto_id.choices %}
+                                            <option value="{{ produto[0] }}" data-preco="{{ form.produto_precos.get(produto[0], 0) }}" {% if produto[0] == item.produto_id %}selected{% endif %}>{{ produto[1] }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <button type="button" class="remover-item min-h-14 min-w-14 rounded-xl bg-red-50 text-red-600 font-bold" aria-label="Remover produto">×</button>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <label class="text-sm font-semibold" for="quantidade-{{ item.id }}">Quantidade</label>
+                                        <input id="quantidade-{{ item.id }}" class="item-quantidade min-h-12 w-24 rounded-xl border-slate-200 dark:border-slate-700" type="number" min="1" step="1" value="{{ item.quantidade }}" required>
+                                        <span class="item-subtotal ml-auto font-bold text-secondary">R$ 0,00</span>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="item-venda rounded-xl bg-surface dark:bg-slate-800 p-3 shadow-sm space-y-2">
+                                    <div class="flex gap-2 items-start">
+                                        <select class="item-produto flex-1 min-h-14 rounded-xl border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800" required>
+                                            <option value="">Selecione o produto</option>
+                                            {% for produto in form.produto_id.choices %}<option value="{{ produto[0] }}" data-preco="{{ form.produto_precos.get(produto[0], 0) }}">{{ produto[1] }}</option>{% endfor %}
+                                        </select>
+                                        <button type="button" class="remover-item min-h-14 min-w-14 rounded-xl bg-red-50 text-red-600 font-bold" aria-label="Remover produto">×</button>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <label class="text-sm font-semibold">Quantidade</label>
+                                        <input class="item-quantidade min-h-12 w-24 rounded-xl border-slate-200 dark:border-slate-700" type="number" min="1" step="1" value="1" required>
+                                        <span class="item-subtotal ml-auto font-bold text-secondary">R$ 0,00</span>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        </div>
+                        <p id="itens-erro" class="hidden text-sm font-semibold text-red-600"></p>
                     </section>
-                    <!-- Quantity -->
-                    <section class="space-y-2">
-                        <label
-                            class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Quantidade</label>
-                        {{ form.quantidade(
-                        class="w-full h-14 px-4 rounded-xl border-none bg-surface dark:bg-slate-800 shadow-sm
-                        text-secondary dark:text-slate-100 focus:ring-2 focus:ring-primary",
-                        placeholder="0"
-                        ) }}
-                    </section>
+                    <input type="hidden" name="produto_id" id="produto_id_legado">
+                    <input type="hidden" name="quantidade" id="quantidade_legada">
                     <!-- Seller Selection -->
                     <section class="space-y-2">
                         <label
@@ -163,8 +184,20 @@
                     </section>
                     <!-- Payment Status -->
                     <section class="space-y-3">
-                        <label class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Status de
-                            Pagamento</label>
+                        <label class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Pagamento</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <select name="forma_pagamento" id="forma_pagamento" class="min-h-12 rounded-xl border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800">
+                                <option value="">Sem pagamento</option>
+                                <option value="pix">Pix</option>
+                                <option value="dinheiro">Dinheiro</option>
+                                <option value="credito">Cartão de crédito</option>
+                                <option value="debito">Cartão de débito</option>
+                                <option value="outro">Outro</option>
+                            </select>
+                            <input name="pagamento_valor" id="pagamento_valor" type="number" min="0.01" step="0.01" placeholder="Valor" class="min-h-12 rounded-xl border-slate-200 dark:border-slate-700 bg-surface dark:bg-slate-800">
+                        </div>
+                        <button type="button" id="pagar-total" class="min-h-11 px-4 rounded-xl border border-primary text-primary font-bold">Marcar valor total como pago</button>
+                        <span class="block text-sm text-slate-500">Status legado</span>
                         <div class="flex gap-4">
 
                             {% for radio in form.status_pagamento %}
@@ -210,8 +243,8 @@
                             Venda</label>
                         <div
                             class="w-full h-14 px-4 rounded-xl bg-slate-100 dark:bg-slate-800/50 flex items-center justify-between">
-                            <span class="text-slate-500 font-medium">Preço x Qtd</span>
-                            <span class="text-xl font-bold text-secondary dark:text-slate-100">R$ 0,00</span>
+                            <span class="text-slate-500 font-medium">Total</span>
+                            <span id="total-venda" class="text-xl font-bold text-secondary dark:text-slate-100">R$ 0,00</span>
                         </div>
                     </section>
                 </div>
@@ -227,6 +260,7 @@
             </footer>
         </div>
 
+        <input type="hidden" name="items" id="items-payload">
         <script src="{{ url_for('static', filename='js/base/nova_venda.js') }}"></script>
 </body>
 

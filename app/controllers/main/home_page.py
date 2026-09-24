@@ -4,13 +4,37 @@ import time
 from flask import Blueprint, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import login_required
 import pandas as pd
-from app.models import Venda, Vendedor
+from app.models import Venda, VendaPagamento, Vendedor
 from sqlalchemy import func, case
 from datetime import datetime, timedelta, timezone
 from app import db
 from app.models.pages.gerenciamento_vendas import Produto
 from . import main
 from app.core.tenancy import get_current_organization
+
+
+def _payment_totals(vendas, organization):
+    ids = [v.id for v in vendas]
+    if not ids:
+        return {}
+    rows = db.session.query(
+        VendaPagamento.venda_id,
+        func.coalesce(func.sum(
+            case((VendaPagamento.status == "confirmado", VendaPagamento.valor), else_=0)
+        ), 0),
+    ).filter(
+        VendaPagamento.organization_id == organization.id,
+        VendaPagamento.venda_id.in_(ids),
+    ).group_by(VendaPagamento.venda_id).all()
+    return {sale_id: float(value or 0) for sale_id, value in rows}
+
+
+def _financial_status(total, paid):
+    if paid <= 0:
+        return "Pendente"
+    if paid < total:
+        return "Parcial"
+    return "Pago"
 
 @main.route("/")
 @main.route('/portal', methods=['GET', 'POST'])
@@ -57,14 +81,9 @@ def index():
     #     )
     # ).scalar() or 0
 
-    total_pago = db.session.query(
-            func.sum(
-                case(
-                    (Venda.status_pagamento == "Pago", Venda.valor_total), 
-                    else_=0
-                )
-            )
-        ).filter(Venda.organization_id == organization.id).scalar() or 0
+    dashboard_sales = Venda.query.filter_by(organization_id=organization.id).all()
+    dashboard_paid = _payment_totals(dashboard_sales, organization)
+    total_pago = sum(dashboard_paid.values())
 
 
     # Ajustado: removido os parênteses extras/listas de dentro do case
@@ -77,14 +96,7 @@ def index():
     #     )
     # ).scalar() or 0
 
-    total_pendente = db.session.query(
-            func.sum(
-                case(
-                    (Venda.status_pagamento != "Pago", Venda.valor_total), 
-                    else_=0
-                )
-            )
-        ).filter(Venda.organization_id == organization.id).scalar() or 0
+    total_pendente = sum(max(float(v.valor_total) - dashboard_paid.get(v.id, 0), 0) for v in dashboard_sales)
 
 
     percentual_pago = round(total_pago / total_vendido * 100) if total_vendido else 0
@@ -94,10 +106,10 @@ def index():
     #         case((Venda.status_pagamento == "Pendente", 1), else_=0)
     #     ).label("pendente")).first() or 0
 
-    qtd_faturas = db.session.query(func.sum(
-        case((Venda.status_pagamento == "Pendente", 1), else_=0)
-        ).label("pendente")
-    ).filter(Venda.organization_id == organization.id).first() or 0
+    qtd_faturas = sum(
+        1 for v in dashboard_sales
+        if _financial_status(float(v.valor_total), dashboard_paid.get(v.id, 0)) == "Pendente"
+    )
 
     
 
@@ -139,7 +151,7 @@ def index():
         total_vendido=total_vendido,
         total_pago=total_pago,
         total_pendente=total_pendente,
-        qtd_faturas=qtd_faturas.pendente,
+        qtd_faturas=qtd_faturas,
         percentual_pago=percentual_pago,
         percentual_pendente=percentual_pendente,
         ranking=ranking
@@ -216,8 +228,12 @@ def api_relatorios():
     total_valor = sum(v.valor_total for v in vendas)
     total_entregues = sum(1 for v in vendas if v.status_entrega == "Entregue")
 
-    pagos = sum(v.quantidade for v in vendas if v.status_pagamento == "Pago")
-    pendentes = sum(v.quantidade for v in vendas if v.status_pagamento != "Pago")
+    paid_by_sale = _payment_totals(vendas, organization)
+    pagos = sum(v.quantidade for v in vendas if _financial_status(float(v.valor_total), paid_by_sale.get(v.id, 0)) == "Pago")
+    parciais = sum(v.quantidade for v in vendas if _financial_status(float(v.valor_total), paid_by_sale.get(v.id, 0)) == "Parcial")
+    pendentes = sum(v.quantidade for v in vendas if _financial_status(float(v.valor_total), paid_by_sale.get(v.id, 0)) == "Pendente")
+    total_pago = sum(paid_by_sale.values())
+    saldo_pendente = sum(max(float(v.valor_total) - paid_by_sale.get(v.id, 0), 0) for v in vendas)
 
     # vendas por dia (usando quantidade)
     vendas_por_dia = (
@@ -245,7 +261,8 @@ def api_relatorios():
             Vendedor.nome,
             func.sum(Venda.quantidade).label("total")
         )
-        .join(Venda)
+        .select_from(Vendedor)
+        .join(Venda, Venda.vendedor_id == Vendedor.id)
         .group_by(Vendedor.nome)
         .filter(
             Venda.organization_id == organization.id,
@@ -266,7 +283,10 @@ def api_relatorios():
         "total_valor": total_valor,
         "total_entregues":total_entregues,
         "pagos": pagos,
+        "parciais": parciais,
         "pendentes": pendentes,
+        "total_pago": total_pago,
+        "saldo_pendente": saldo_pendente,
         "vendas_dia_labels": labels_dia,
         "vendas_dia_valores": valores_dia,
         "ranking": ranking_data
@@ -288,6 +308,11 @@ def api_ranking():
     limit = int(request.args.get("limit", 5))
     offset = int(request.args.get("offset", 0))
 
+    payment_totals = db.session.query(
+        VendaPagamento.venda_id,
+        func.coalesce(func.sum(case((VendaPagamento.status == "confirmado", VendaPagamento.valor), else_=0)), 0).label("paid"),
+    ).filter(VendaPagamento.organization_id == organization.id).group_by(VendaPagamento.venda_id).subquery()
+
     query = (
         db.session.query(
             Vendedor.nome,
@@ -295,19 +320,16 @@ def api_ranking():
             func.sum(Venda.quantidade).label("quantidade"),
             func.sum(Venda.valor_total).label("valor_total"),
 
-            func.sum(
-                case((Venda.status_pagamento == "Pago", Venda.valor_total), else_=0)
-            ).label("valor_pago"),
+            func.sum(func.coalesce(payment_totals.c.paid, 0)).label("valor_pago"),
+            func.sum(Venda.valor_total - func.coalesce(payment_totals.c.paid, 0)).label("valor_pendente"),
 
             func.sum(
-                case((Venda.status_pagamento != "Pago", Venda.valor_total), else_=0)
-            ).label("valor_pendente"),
-
-            func.sum(
-                case((Venda.status_pagamento == "Pago", Venda.quantidade), else_=0)
+                case((func.coalesce(payment_totals.c.paid, 0) >= Venda.valor_total, Venda.quantidade), else_=0)
             ).label("quantidade_paga"),
         )
-        .join(Venda)
+        .select_from(Vendedor)
+        .join(Venda, Venda.vendedor_id == Vendedor.id)
+        .outerjoin(payment_totals, payment_totals.c.venda_id == Venda.id)
         .filter(Venda.organization_id == organization.id,
                 Vendedor.organization_id == organization.id,
                 )
@@ -354,6 +376,11 @@ def exportar_pdf():
 def exportar_excel():
     organization = get_current_organization()
 
+    payment_totals = db.session.query(
+        VendaPagamento.venda_id,
+        func.coalesce(func.sum(case((VendaPagamento.status == "confirmado", VendaPagamento.valor), else_=0)), 0).label("paid"),
+    ).filter(VendaPagamento.organization_id == organization.id).group_by(VendaPagamento.venda_id).subquery()
+
     vendedor = request.args.get("vendedor")
 
     query = (
@@ -364,10 +391,12 @@ def exportar_excel():
             Venda.quantidade,
             Venda.valor_total,
             Venda.status_pagamento,
+            func.coalesce(payment_totals.c.paid, 0).label("total_pago"),
             Venda.data_venda
         )
         .join(Venda)
         .join(Produto)
+        .outerjoin(payment_totals, payment_totals.c.venda_id == Venda.id)
         .filter(Venda.organization_id == organization.id,
                 Vendedor.organization_id == organization.id,
                 Produto.organization_id == organization.id,
@@ -388,6 +417,9 @@ def exportar_excel():
             "Quantidade": v.quantidade,
             "Valor Total": float(v.valor_total),
             "Status Pagamento": v.status_pagamento,
+            "Total Pago": float(v.total_pago),
+            "Saldo Pendente": max(float(v.valor_total) - float(v.total_pago), 0),
+            "Status Financeiro": _financial_status(float(v.valor_total), float(v.total_pago)),
             "Data da Venda": v.data_venda.strftime("%d/%m/%Y")
         }
         for v in vendas

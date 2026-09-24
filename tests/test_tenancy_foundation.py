@@ -1,5 +1,6 @@
 import unittest
 import importlib.util
+import json
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -11,7 +12,7 @@ from flask_login import LoginManager, login_user, logout_user
 from app import db
 from app.core.tenancy import register_tenancy_context
 from app.models.auth.user import User
-from app.models.pages.gerenciamento_vendas import Produto, Venda, VendaItem, Vendedor
+from app.models.pages.gerenciamento_vendas import Produto, Venda, VendaItem, VendaPagamento, Vendedor
 from app.models.tenancy import Organization, OrganizationUser
 
 
@@ -280,6 +281,75 @@ class TenancyFoundationTestCase(unittest.TestCase):
             self.assertIs(item.venda, sale)
             self.assertIs(item.produto, product)
 
+    def test_payment_summary_supports_partial_and_multiple_payments(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization = Organization.query.one()
+            product = Produto(organization_id=organization.id, nome="Produto", preco=50)
+            seller = Vendedor(organization_id=organization.id, nome="Vendedor")
+            db.session.add_all([product, seller])
+            db.session.flush()
+            sale = Venda(
+                organization_id=organization.id, produto_id=product.id,
+                vendedor_id=seller.id, comprador_nome="Cliente", quantidade=1,
+                tipo_vendedor="Membro", status_pagamento="Pendente", valor_total=50,
+            )
+            sale.pagamentos.extend([
+                VendaPagamento(organization_id=organization.id, forma_pagamento="pix", valor="20", status="confirmado"),
+                VendaPagamento(organization_id=organization.id, forma_pagamento="dinheiro", valor="30", status="confirmado"),
+            ])
+            db.session.add(sale)
+            db.session.commit()
+            from app.controllers.main.painel_vendas import _payment_summary
+            self.assertEqual(_payment_summary(sale)[2], "Pago")
+            sale.pagamentos[0].status = "cancelado"
+            self.assertEqual(_payment_summary(sale)[2], "Parcial")
+            sale.pagamentos[1].status = "cancelado"
+            self.assertEqual(_payment_summary(sale)[2], "Pendente")
+
+    def test_payment_endpoint_rejects_excess_and_cross_tenant(self):
+        records = self.create_read_isolation_fixture()
+        user_id, organization_id, own_sale_id = records[0]
+        foreign_sale_id = records[1][2]
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = organization_id
+            excess = client.post(
+                f"/api/vendas/{own_sale_id}/pagamentos",
+                json={"forma_pagamento": "pix", "valor": 11},
+            )
+            zero = client.post(
+                f"/api/vendas/{own_sale_id}/pagamentos",
+                json={"forma_pagamento": "dinheiro", "valor": 0},
+            )
+            foreign = client.post(
+                f"/api/vendas/{foreign_sale_id}/pagamentos",
+                json={"forma_pagamento": "pix", "valor": 1},
+            )
+        self.assertEqual(excess.status_code, 400)
+        self.assertEqual(zero.status_code, 400)
+        self.assertEqual(foreign.status_code, 404)
+
+    def test_payment_model_rejects_non_positive_value_and_foreign_sale(self):
+        with self.app.app_context():
+            first, second = Organization(name="A"), Organization(name="B")
+            db.session.add_all([first, second])
+            db.session.flush()
+            product = Produto(organization_id=first.id, nome="P", preco=10)
+            seller = Vendedor(organization_id=first.id, nome="S")
+            db.session.add_all([product, seller])
+            db.session.flush()
+            sale = Venda(organization_id=first.id, produto_id=product.id, vendedor_id=seller.id,
+                         comprador_nome="C", quantidade=1, tipo_vendedor="Membro",
+                         status_pagamento="Pendente", valor_total=10)
+            db.session.add(sale)
+            db.session.flush()
+            sale.pagamentos.append(VendaPagamento(organization_id=second.id, forma_pagamento="pix", valor=1, status="confirmado"))
+            with self.assertRaises(ValueError):
+                db.session.commit()
+            db.session.rollback()
+
     def test_venda_item_rejects_foreign_tenant_product(self):
         self.create_user_with_memberships(membership_count=1)
         with self.app.app_context():
@@ -366,8 +436,197 @@ class TenancyFoundationTestCase(unittest.TestCase):
                 with patch.object(painel_vendas, "VendaForm", return_value=fake_form):
                     painel_vendas.nova_venda()
                 sale = Venda.query.one()
+                item_count = VendaItem.query.filter_by(venda_id=sale.id).count()
+                item_product_id = VendaItem.query.filter_by(venda_id=sale.id).one().produto_id
 
         self.assertEqual(sale.organization_id, organization_id)
+        self.assertEqual(item_count, 1)
+        self.assertEqual(item_product_id, product_id)
+
+    def test_items_payload_rejects_empty_and_invalid_quantities(self):
+        from app.controllers.main import painel_vendas
+
+        form = self.multi_item_form()
+        for payload in ([], [{"produto_id": 1, "quantidade": 0}],
+                        [{"produto_id": 1, "quantidade": -1}],
+                        [{"produto_id": 1}],):
+            with self.app.test_request_context(
+                "/nova-venda", method="POST", json={"items": payload}
+            ):
+                with self.assertRaises(ValueError):
+                    painel_vendas._request_items(form)
+
+    def test_duplicate_products_are_consolidated(self):
+        from app.controllers.main import painel_vendas
+
+        with self.app.test_request_context(
+            "/nova-venda", method="POST",
+            json={"items": [
+                {"produto_id": 7, "quantidade": 2},
+                {"produto_id": 7, "quantidade": 3},
+            ]},
+        ):
+            items = painel_vendas._request_items(self.multi_item_form())
+        self.assertEqual(items, [{"produto_id": 7, "quantidade": 5}])
+
+    @staticmethod
+    def multi_item_form():
+        return SimpleNamespace(
+            produto_id=SimpleNamespace(data=""),
+            vendedor_id=SimpleNamespace(data=""),
+            quantidade=SimpleNamespace(data=None),
+            comprador_nome=SimpleNamespace(data="Comprador"),
+            tipo_vendedor=SimpleNamespace(data="Membro"),
+            status_pagamento=SimpleNamespace(data="Pendente"),
+            observacao=SimpleNamespace(data=""),
+            data_venda=SimpleNamespace(data=None),
+            validate=lambda: True,
+            validate_on_submit=lambda: True,
+        )
+
+    def test_create_sale_with_multiple_items_calculates_and_snapshots_prices(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization_id = Organization.query.one().id
+            products = [
+                Produto(organization_id=organization_id, nome="A", preco=10.25),
+                Produto(organization_id=organization_id, nome="B", preco=3.50),
+            ]
+            db.session.add_all(products)
+            db.session.commit()
+            product_ids = [product.id for product in products]
+
+        from app.controllers.main import painel_vendas
+        from flask_login import login_user
+
+        with self.app.test_request_context(
+            "/nova-venda", method="POST",
+            data={
+                "items": json.dumps([
+                    {"produto_id": product_ids[0], "quantidade": 2},
+                    {"produto_id": product_ids[1], "quantidade": 3},
+                ]),
+                "vendedor_nome": "Vendedor",
+            },
+        ):
+            login_user(db.session.get(User, user_id))
+            with self.app.app_context():
+                from app.core.tenancy import resolve_current_organization
+                resolve_current_organization()
+                with patch.object(
+                    painel_vendas, "VendaForm", return_value=self.multi_item_form()
+                ):
+                    response = painel_vendas.nova_venda()
+                sale = Venda.query.one()
+                items = sorted(sale.items, key=lambda item: item.produto_id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(sale.quantidade, 5)
+        self.assertAlmostEqual(sale.valor_total, 31.0)
+        self.assertEqual(len(items), 2)
+        self.assertEqual([item.quantidade for item in items], [2, 3])
+        self.assertEqual([float(item.preco_unitario) for item in items], [10.25, 3.5])
+
+    def test_multi_item_error_rolls_back_the_entire_sale(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization_id = Organization.query.one().id
+            product = Produto(organization_id=organization_id, nome="A", preco=10)
+            other_org = Organization(name="Other")
+            db.session.add_all([product, other_org])
+            db.session.flush()
+            foreign_product = Produto(
+                organization_id=other_org.id, nome="Foreign", preco=20
+            )
+            db.session.add(foreign_product)
+            db.session.commit()
+            product_ids = product.id, foreign_product.id
+
+        from app.controllers.main import painel_vendas
+        from flask_login import login_user
+
+        with self.app.test_request_context(
+            "/nova-venda", method="POST",
+            data={
+                "items": json.dumps([
+                    {"produto_id": product_ids[0], "quantidade": 1},
+                    {"produto_id": product_ids[1], "quantidade": 1},
+                ]),
+                "vendedor_nome": "Vendedor",
+            },
+        ):
+            login_user(db.session.get(User, user_id))
+            with self.app.app_context():
+                from app.core.tenancy import resolve_current_organization
+                resolve_current_organization()
+                with patch.object(
+                    painel_vendas, "VendaForm", return_value=self.multi_item_form()
+                ):
+                    response = painel_vendas.nova_venda()
+                self.assertEqual(response[1], 400)
+                self.assertEqual(Venda.query.count(), 0)
+                self.assertEqual(VendaItem.query.count(), 0)
+
+    def test_edit_preserves_existing_price_and_supports_add_and_remove(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization_id = Organization.query.one().id
+            products = [
+                Produto(organization_id=organization_id, nome="A", preco=10),
+                Produto(organization_id=organization_id, nome="B", preco=20),
+            ]
+            seller = Vendedor(organization_id=organization_id, nome="Vendedor")
+            db.session.add_all([*products, seller])
+            db.session.flush()
+            sale = Venda(
+                organization_id=organization_id, produto_id=products[0].id,
+                vendedor_id=seller.id, comprador_nome="Cliente", quantidade=1,
+                tipo_vendedor="Membro", status_pagamento="Pendente", valor_total=10,
+            )
+            db.session.add(sale)
+            db.session.flush()
+            sale.items.append(VendaItem(
+                produto=products[0], organization_id=organization_id,
+                quantidade=1, preco_unitario="8.000000", subtotal="8.000000",
+            ))
+            db.session.commit()
+            sale_id, first_id, second_id, seller_id = (
+                sale.id, products[0].id, products[1].id, seller.id
+            )
+
+        from app.controllers.main import painel_vendas
+        from flask_login import login_user
+
+        def edit(items):
+            with self.app.test_request_context(
+                f"/editar-venda/{sale_id}", method="POST",
+                data={"items": json.dumps(items), "vendedor_id": str(seller_id)},
+            ):
+                login_user(db.session.get(User, user_id))
+                with self.app.app_context():
+                    from app.core.tenancy import resolve_current_organization
+                    resolve_current_organization()
+                    form = self.multi_item_form()
+                    form.vendedor_id.data = str(seller.id)
+                    with patch.object(painel_vendas, "VendaForm", return_value=form):
+                        return painel_vendas.editar_venda(sale_id)
+
+        edit([
+            {"produto_id": first_id, "quantidade": 2},
+            {"produto_id": second_id, "quantidade": 1},
+        ])
+        with self.app.app_context():
+            sale = db.session.get(Venda, sale_id)
+            self.assertEqual(len(sale.items), 2)
+            self.assertEqual(float(next(i for i in sale.items if i.produto_id == first_id).preco_unitario), 8.0)
+            self.assertEqual(float(next(i for i in sale.items if i.produto_id == second_id).preco_unitario), 20.0)
+            self.assertAlmostEqual(sale.valor_total, 36.0)
+
+        edit([{ "produto_id": first_id, "quantidade": 1 }])
+        with self.app.app_context():
+            sale = db.session.get(Venda, sale_id)
+            self.assertEqual(len(sale.items), 1)
+            self.assertEqual(sale.items[0].produto_id, first_id)
 
     def create_read_isolation_fixture(self):
         records = []

@@ -118,6 +118,12 @@ class Venda(db.Model):
         cascade="all, delete-orphan",
     )
 
+    pagamentos = db.relationship(
+        "VendaPagamento",
+        back_populates="venda",
+        cascade="all, delete-orphan",
+    )
+
 
     def __repr__(self):
         return f"<Venda {self.id}>"
@@ -159,3 +165,44 @@ def validate_venda_item_tenant(mapper, connection, target):
         raise ValueError("VendaItem e Venda devem pertencer à mesma organização")
     if produto.organization_id != target.organization_id:
         raise ValueError("Produto deve pertencer à organização da VendaItem")
+
+
+class VendaPagamento(db.Model):
+    __tablename__ = "venda_pagamentos"
+    __table_args__ = (
+        db.CheckConstraint(
+            "forma_pagamento IN ('pix', 'dinheiro', 'credito', 'debito', 'outro', 'legado')",
+            name="ck_venda_pagamento_forma",
+        ),
+        db.CheckConstraint(
+            "status IN ('pendente', 'confirmado', 'cancelado')",
+            name="ck_venda_pagamento_status",
+        ),
+        db.CheckConstraint("valor > 0", name="ck_venda_pagamento_valor_positivo"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    venda_id = db.Column(
+        db.Integer, db.ForeignKey("vendas.id"), nullable=False, index=True
+    )
+    organization_id = db.Column(
+        db.Integer, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    forma_pagamento = db.Column(db.String(20), nullable=False)
+    valor = db.Column(db.Numeric(18, 6), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="pendente")
+    observacao = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    venda = db.relationship("Venda", back_populates="pagamentos")
+
+
+@event.listens_for(VendaPagamento, "before_insert")
+@event.listens_for(VendaPagamento, "before_update")
+def validate_venda_pagamento_tenant(mapper, connection, target):
+    session = object_session(target)
+    venda = target.venda or (session.get(Venda, target.venda_id) if session else None)
+    if venda is None:
+        return
+    if target.organization_id != venda.organization_id:
+        raise ValueError("Pagamento e Venda devem pertencer à mesma organização")
