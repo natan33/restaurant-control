@@ -6,6 +6,9 @@ class Produto(db.Model):
     __tablename__ = "produtos"
 
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(
+        db.Integer, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
     nome = db.Column(db.String(120), nullable=False)
     preco = db.Column(db.Float, nullable=False)
 
@@ -28,6 +31,9 @@ class Vendedor(db.Model):
     __tablename__ = "vendedores"
 
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(
+        db.Integer, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
     nome = db.Column(db.String(120), nullable=False)
 
     vendas = db.relationship("Venda", backref="vendedor", lazy=True)
@@ -49,6 +55,9 @@ class Venda(db.Model):
     __tablename__ = "vendas"
 
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(
+        db.Integer, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
 
     produto_id = db.Column(
         db.Integer,

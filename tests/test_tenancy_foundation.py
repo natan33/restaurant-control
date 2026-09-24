@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from flask import Flask, g, session
 from flask_login import LoginManager, login_user, logout_user
@@ -6,6 +8,7 @@ from flask_login import LoginManager, login_user, logout_user
 from app import db
 from app.core.tenancy import register_tenancy_context
 from app.models.auth.user import User
+from app.models.pages.gerenciamento_vendas import Produto, Venda, Vendedor
 from app.models.tenancy import Organization, OrganizationUser
 
 
@@ -200,6 +203,79 @@ class TenancyFoundationTestCase(unittest.TestCase):
             response = client.get("/account")
 
         self.assertEqual(response.status_code, 200)
+
+    def test_operational_entities_persist_with_the_current_organization(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization = Organization.query.one()
+            organization_id = organization.id
+            product = Produto(
+                organization_id=organization_id, nome="Produto", preco=10
+            )
+            seller = Vendedor(
+                organization_id=organization.id, nome="Vendedor"
+            )
+            db.session.add_all([product, seller])
+            db.session.flush()
+            sale = Venda(
+                organization_id=organization.id,
+                produto_id=product.id,
+                vendedor_id=seller.id,
+                comprador_nome="Comprador",
+                quantidade=1,
+                tipo_vendedor="Membro",
+                status_pagamento="Pendente",
+                valor_total=10,
+            )
+            db.session.add(sale)
+            db.session.commit()
+
+            self.assertEqual(product.organization_id, organization.id)
+            self.assertEqual(seller.organization_id, organization.id)
+            self.assertEqual(sale.organization_id, organization.id)
+
+    def test_sale_write_ignores_request_organization_id(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization = Organization.query.one()
+            organization_id = organization.id
+            product = Produto(
+                organization_id=organization_id, nome="Produto", preco=10
+            )
+            db.session.add(product)
+            db.session.commit()
+            product_id = product.id
+
+        fake_form = SimpleNamespace(
+            produto_id=SimpleNamespace(data=str(product_id), choices=[]),
+            vendedor_id=SimpleNamespace(data=""),
+            quantidade=SimpleNamespace(data=1),
+            vendedor_nome=SimpleNamespace(data=""),
+            comprador_nome=SimpleNamespace(data="Comprador"),
+            tipo_vendedor=SimpleNamespace(data="Membro"),
+            status_pagamento=SimpleNamespace(data="Pendente"),
+            observacao=SimpleNamespace(data=""),
+            data_venda=SimpleNamespace(data=None),
+            validate_on_submit=lambda: True,
+        )
+
+        from app.controllers.main import painel_vendas
+        from flask_login import login_user
+
+        with self.app.test_request_context(
+            "/nova-venda",
+            method="POST",
+            data={"vendedor_nome": "Vendedor", "organization_id": 999999},
+        ):
+            login_user(db.session.get(User, user_id))
+            with self.app.app_context():
+                from app.core.tenancy import resolve_current_organization
+                resolve_current_organization()
+                with patch.object(painel_vendas, "VendaForm", return_value=fake_form):
+                    painel_vendas.nova_venda()
+                sale = Venda.query.one()
+
+        self.assertEqual(sale.organization_id, organization_id)
 
 
 if __name__ == "__main__":

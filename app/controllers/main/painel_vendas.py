@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import time
 
-from flask import flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import login_required
 import pandas as pd
 from io import BytesIO
@@ -9,6 +9,7 @@ from sqlalchemy import case, func
 
 from app.controllers.forms.venda_form import VendaForm
 from app.models.pages.gerenciamento_vendas import Produto, Venda, Vendedor
+from app.core.tenancy import get_current_organization
 
 from datetime import datetime, timedelta
 from . import main
@@ -32,22 +33,39 @@ def nova_venda():
     form.produto_id.choices = [(p.id, p.nome) for p in Produto.query.all()]
 
     if form.validate_on_submit():
+        organization = get_current_organization()
         vendedor_nome = request.form.get('vendedor_nome', '').strip().lower()
         vendedor_id = form.vendedor_id.data
 
         if not vendedor_id:
-            vendedor = Vendedor.query.filter_by(nome=vendedor_nome).first()
+            vendedor = Vendedor.query.filter_by(
+                nome=vendedor_nome, organization_id=organization.id
+            ).first()
             if not vendedor:
-                vendedor = Vendedor(nome=vendedor_nome)
+                vendedor = Vendedor(
+                    nome=vendedor_nome,
+                    organization_id=organization.id,
+                )
                 db.session.add(vendedor)
                 db.session.commit()
             vendedor_id = vendedor.id
+        else:
+            vendedor = Vendedor.query.filter_by(
+                id=vendedor_id, organization_id=organization.id
+            ).first()
+            if vendedor is None:
+                abort(404)
 
-        produto = Produto.query.get(form.produto_id.data)
+        produto = Produto.query.filter_by(
+            id=form.produto_id.data, organization_id=organization.id
+        ).first()
+        if produto is None:
+            abort(404)
         valor_total = produto.preco * form.quantidade.data
         data_venda = form.data_venda.data or datetime.now(timezone.utc)
 
         venda = Venda(
+            organization_id=organization.id,
             produto_id=form.produto_id.data,
             vendedor_id=vendedor_id,
             comprador_nome=form.comprador_nome.data.strip(),
@@ -242,8 +260,11 @@ def api_cards_gestao():
 @main.route('/api/vendas/<int:id>', methods=['DELETE'])
 @login_required
 def api_deletar_venda(id):
+    organization = get_current_organization()
 
-    venda = Venda.query.get_or_404(id)
+    venda = Venda.query.filter_by(
+        id=id, organization_id=organization.id
+    ).first_or_404()
 
     db.session.delete(venda)
     db.session.commit()
@@ -254,10 +275,13 @@ def api_deletar_venda(id):
 @login_required
 def editar_venda(venda_id):
     form = VendaForm()
+    organization = get_current_organization()
 
     form.produto_id.choices = [(p.id, p.nome) for p in Produto.query.all()]
 
-    venda = Venda.query.get_or_404(venda_id)
+    venda = Venda.query.filter_by(
+        id=venda_id, organization_id=organization.id
+    ).first_or_404()
 
     produto_nome = None
     vendedor_nome = None
@@ -286,14 +310,28 @@ def editar_venda(venda_id):
         vendedor_id = form.vendedor_id.data
 
         if not vendedor_id:
-            vendedor = Vendedor.query.filter_by(nome=vendedor_nome).first()
+            vendedor = Vendedor.query.filter_by(
+                nome=vendedor_nome, organization_id=organization.id
+            ).first()
             if not vendedor:
-                vendedor = Vendedor(nome=vendedor_nome)
+                vendedor = Vendedor(
+                    nome=vendedor_nome, organization_id=organization.id
+                )
                 db.session.add(vendedor)
                 db.session.commit()
             vendedor_id = vendedor.id
+        else:
+            vendedor = Vendedor.query.filter_by(
+                id=vendedor_id, organization_id=organization.id
+            ).first()
+            if vendedor is None:
+                abort(404)
 
-        produto = Produto.query.get(form.produto_id.data)
+        produto = Produto.query.filter_by(
+            id=form.produto_id.data, organization_id=organization.id
+        ).first()
+        if produto is None:
+            abort(404)
         valor_total = produto.preco * form.quantidade.data
         data_venda = form.data_venda.data or datetime.now(timezone.utc)
 
@@ -424,7 +462,10 @@ def exportar_vendas():
 @main.route('/api/vendas/<int:venda_id>/entrega', methods=['POST'])
 @login_required
 def atualizar_entrega(venda_id):
-    venda = Venda.query.get_or_404(venda_id)
+    organization = get_current_organization()
+    venda = Venda.query.filter_by(
+        id=venda_id, organization_id=organization.id
+    ).first_or_404()
 
     # Toggle: se já está entregue, volta para pendente; senão, marca como entregue
     if venda.status_entrega == "Entregue":
@@ -445,7 +486,10 @@ def atualizar_entrega(venda_id):
 @main.route('/api/vendas/<int:venda_id>/status/pagamento', methods=['POST'])
 @login_required
 def atualizar_pagamento(venda_id): # Nome alterado para clareza
-    venda = Venda.query.get_or_404(venda_id)
+    organization = get_current_organization()
+    venda = Venda.query.filter_by(
+        id=venda_id, organization_id=organization.id
+    ).first_or_404()
 
     if venda.status_pagamento == "Pendente":
         venda.status_pagamento = "Pago"
