@@ -10,11 +10,13 @@ from datetime import datetime, timedelta, timezone
 from app import db
 from app.models.pages.gerenciamento_vendas import Produto
 from . import main
+from app.core.tenancy import get_current_organization
 
 @main.route("/")
 @main.route('/portal', methods=['GET', 'POST'])
 @login_required
 def index():
+    organization = get_current_organization()
     # Últimos 7 dias
     hoje = datetime.now(timezone.utc)
     dias = [hoje - timedelta(days=i) for i in range(6, -1, -1)]
@@ -27,6 +29,7 @@ def index():
         total = db.session.query(func.sum(Venda.valor_total))\
             .filter(
                 func.date(Venda.data_venda) == dia.date(),
+                Venda.organization_id == organization.id,
                 Venda.produto_id.in_([5, 6])   #  AQUI
             ).scalar()
         
@@ -41,7 +44,7 @@ def index():
     #total_vendido = db.session.query(func.sum(Venda.valor_total)).scalar() or 0
 
     total_vendido = db.session.query(func.sum(Venda.valor_total))\
-    .filter(Venda.produto_id.in_([5, 6]))\
+    .filter(Venda.organization_id == organization.id, Venda.produto_id.in_([5, 6]))\
     .scalar() or 0
 
 
@@ -62,7 +65,7 @@ def index():
                     else_=0
                 )
             )
-        ).filter(Venda.produto_id.in_([5, 6])).scalar() or 0
+        ).filter(Venda.organization_id == organization.id, Venda.produto_id.in_([5, 6])).scalar() or 0
 
 
     # Ajustado: removido os parênteses extras/listas de dentro do case
@@ -82,7 +85,7 @@ def index():
                     else_=0
                 )
             )
-        ).filter(Venda.produto_id.in_([5, 6])).scalar() or 0
+        ).filter(Venda.organization_id == organization.id, Venda.produto_id.in_([5, 6])).scalar() or 0
 
 
     percentual_pago = round(total_pago / total_vendido * 100) if total_vendido else 0
@@ -95,7 +98,7 @@ def index():
     qtd_faturas = db.session.query(func.sum(
         case((Venda.status_pagamento == "Pendente", 1), else_=0)
         ).label("pendente")
-    ).filter(Venda.produto_id.in_([5, 6])).first() or 0
+    ).filter(Venda.organization_id == organization.id, Venda.produto_id.in_([5, 6])).first() or 0
 
     
 
@@ -108,7 +111,8 @@ def index():
         func.sum(case((Venda.status_pagamento == "Pago", Venda.valor_total), else_=0)).label("total_pago"),
         func.sum(case((Venda.status_pagamento != "Pago", Venda.valor_total), else_=0)).label("total_pendente"),
         func.sum(Venda.valor_total).label("total")
-    ).filter(Venda.tipo_vendedor == "Jovem",
+    ).filter(Venda.organization_id == organization.id,
+             Venda.tipo_vendedor == "Jovem",
              Venda.produto_id.in_([5, 6])) \
     .group_by(Venda.vendedor_id) \
     .order_by(func.sum(Venda.valor_total).desc()) \
@@ -117,7 +121,9 @@ def index():
     ranking = []
     for r in ranking_query:
         # Como a query só dá o ID, pegamos o nome do vendedor aqui
-        vendedor = db.session.get(Vendedor, r.vendedor_id)
+        vendedor = Vendedor.query.filter_by(
+            id=r.vendedor_id, organization_id=organization.id
+        ).first()
         
         ranking.append({
             "nome": str(vendedor.nome).title() if vendedor else "Desconhecido",
@@ -144,6 +150,7 @@ def index():
 @main.route("/api/vendas-semanais")
 @login_required
 def api_vendas_semanais():
+    organization = get_current_organization()
     hoje = datetime.utcnow()
     dias_semana = {
         'Mon': 'Seg', 'Tue': 'Ter', 'Wed': 'Qua', 
@@ -158,7 +165,10 @@ def api_vendas_semanais():
     
     for dia in datas:
         total = db.session.query(func.sum(Venda.valor_total))\
-            .filter(func.date(Venda.data_venda) == dia.date()).scalar()
+            .filter(
+                func.date(Venda.data_venda) == dia.date(),
+                Venda.organization_id == organization.id,
+            ).scalar()
         
         # Traduz o dia da semana
         dia_en = dia.strftime('%a')
@@ -188,11 +198,14 @@ def relatorios():
 @main.route("/api/relatorios")
 @login_required
 def api_relatorios():
+    organization = get_current_organization()
 
     vendedor_nome = request.args.get("vendedor")
 
     query = db.session.query(Venda).join(Vendedor)\
-    .filter(Venda.produto_id.in_([5, 6]))
+    .filter(Venda.organization_id == organization.id,
+            Vendedor.organization_id == organization.id,
+            Venda.produto_id.in_([5, 6]))
 
     if vendedor_nome:
         query = query.filter(Vendedor.nome.ilike(f"%{vendedor_nome}%"))
@@ -215,6 +228,8 @@ def api_relatorios():
         )
         .join(Vendedor)
         .filter(
+            Venda.organization_id == organization.id,
+            Vendedor.organization_id == organization.id,
             Venda.produto_id.in_([5, 6]),  # 👈 AQUI
             Vendedor.nome.ilike(f"%{vendedor_nome}%") if vendedor_nome else True
         )
@@ -234,7 +249,11 @@ def api_relatorios():
         )
         .join(Venda)
         .group_by(Vendedor.nome)
-        .filter(Venda.produto_id.in_([5, 6])) 
+        .filter(
+            Venda.organization_id == organization.id,
+            Vendedor.organization_id == organization.id,
+            Venda.produto_id.in_([5, 6]),
+        )
         .order_by(func.sum(Venda.quantidade).desc())
         .limit(5)
         .all()
@@ -264,6 +283,7 @@ def ranking_completo():
 @main.route("/api/ranking")
 @login_required
 def api_ranking():
+    organization = get_current_organization()
 
     vendedor = request.args.get("vendedor")
     tipo = request.args.get("tipo")
@@ -291,7 +311,9 @@ def api_ranking():
             ).label("quantidade_paga"),
         )
         .join(Venda)
-        .filter(Venda.produto_id.in_([5, 6]))
+        .filter(Venda.organization_id == organization.id,
+                Vendedor.organization_id == organization.id,
+                Venda.produto_id.in_([5, 6]))
     )
 
     if vendedor:
@@ -333,6 +355,7 @@ def exportar_pdf():
 @main.route("/relatorios/exportar/excel")
 @login_required
 def exportar_excel():
+    organization = get_current_organization()
 
     vendedor = request.args.get("vendedor")
 
@@ -348,7 +371,10 @@ def exportar_excel():
         )
         .join(Venda)
         .join(Produto)
-        .filter(Venda.produto_id.in_([5, 6]))
+        .filter(Venda.organization_id == organization.id,
+                Vendedor.organization_id == organization.id,
+                Produto.organization_id == organization.id,
+                Venda.produto_id.in_([5, 6]))
         .order_by(Venda.id.asc())
     )
 

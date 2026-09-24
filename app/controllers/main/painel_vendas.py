@@ -28,9 +28,12 @@ def gestao_vendas():
 @login_required
 def nova_venda():
     form = VendaForm()
+    organization = get_current_organization()
 
     # carregar produtos
-    form.produto_id.choices = [(p.id, p.nome) for p in Produto.query.all()]
+    form.produto_id.choices = [(p.id, p.nome) for p in Produto.query.filter_by(
+        organization_id=organization.id
+    ).all()]
 
     if form.validate_on_submit():
         organization = get_current_organization()
@@ -99,10 +102,14 @@ def nova_venda():
 def buscar_vendedores():
 
     termo = request.args.get("q", "")
+    organization = get_current_organization()
 
     vendedores = (
         Vendedor.query
-        .filter(Vendedor.nome.ilike(f"%{termo}%"))
+        .filter(
+            Vendedor.organization_id == organization.id,
+            Vendedor.nome.ilike(f"%{termo}%"),
+        )
         .limit(10)
         .all()
     )
@@ -118,7 +125,11 @@ def buscar_vendedores():
 @login_required
 def buscar_produtos():
     query = request.args.get('q', '')
-    produtos = Produto.query.filter(Produto.nome.ilike(f'%{query}%')).all()
+    organization = get_current_organization()
+    produtos = Produto.query.filter(
+        Produto.organization_id == organization.id,
+        Produto.nome.ilike(f'%{query}%'),
+    ).all()
     return jsonify([{'id': p.id, 'nome': p.nome, 'preco':p.preco} for p in produtos])
 
 
@@ -131,7 +142,12 @@ def api_vendas():
     limit = int(request.args.get('limit', 5))  # número de registros por requisição
     offset = int(request.args.get('offset', 0))  # índice inicial
 
-    query = Venda.query.join(Vendedor).join(Produto)
+    organization = get_current_organization()
+    query = Venda.query.join(Vendedor).join(Produto).filter(
+        Venda.organization_id == organization.id,
+        Vendedor.organization_id == organization.id,
+        Produto.organization_id == organization.id,
+    )
 
     # filtra somente as de dobradinha
     query = query.filter(Venda.produto_id.in_([5, 6]))
@@ -242,8 +258,9 @@ def status_entrega_row(valor=None):
 @main.route('/api/cards/gestao', methods=['GET'])
 @login_required
 def api_cards_gestao():
+    organization = get_current_organization()
 
-    vendas = Venda.query.all()
+    vendas = Venda.query.filter_by(organization_id=organization.id).all()
 
     total = sum(v.quantidade for v in vendas if v.produto_id in [5,6] )
     pagos = sum(v.quantidade for v in vendas if v.produto_id in [5,6] if v.status_pagamento == "Pago" )
@@ -277,7 +294,9 @@ def editar_venda(venda_id):
     form = VendaForm()
     organization = get_current_organization()
 
-    form.produto_id.choices = [(p.id, p.nome) for p in Produto.query.all()]
+    form.produto_id.choices = [(p.id, p.nome) for p in Produto.query.filter_by(
+        organization_id=organization.id
+    ).all()]
 
     venda = Venda.query.filter_by(
         id=venda_id, organization_id=organization.id
@@ -296,8 +315,12 @@ def editar_venda(venda_id):
         form.observacao.data = venda.observacao
         form.data_venda.data = venda.data_venda
 
-        produto = Produto.query.get(venda.produto_id)
-        vendedor = Vendedor.query.get(venda.vendedor_id)
+        produto = Produto.query.filter_by(
+            id=venda.produto_id, organization_id=organization.id
+        ).first()
+        vendedor = Vendedor.query.filter_by(
+            id=venda.vendedor_id, organization_id=organization.id
+        ).first()
 
         if produto:
             produto_nome = produto.nome
@@ -360,8 +383,11 @@ def editar_venda(venda_id):
 @main.route('/api/vendas/<int:id>', methods=['GET'])
 @login_required
 def api_venda_detalhe(id):
+    organization = get_current_organization()
 
-    venda = Venda.query.get_or_404(id)
+    venda = Venda.query.filter_by(
+        id=id, organization_id=organization.id
+    ).first_or_404()
 
     return jsonify({
         "id": venda.id,
@@ -381,8 +407,13 @@ def api_venda_detalhe(id):
 @main.route('/exportar-vendas', methods=['GET'])
 @login_required
 def exportar_vendas():
+    organization = get_current_organization()
     # 1. Query original com Join e Ordenação
-    query = Venda.query.join(Vendedor).join(Produto).order_by(Vendedor.nome.asc(), Venda.id.asc())
+    query = Venda.query.join(Vendedor).join(Produto).filter(
+        Venda.organization_id == organization.id,
+        Vendedor.organization_id == organization.id,
+        Produto.organization_id == organization.id,
+    ).order_by(Vendedor.nome.asc(), Venda.id.asc())
     query = query.filter(Venda.produto_id.in_([5, 6]))
     
     q = request.args.get('q', '').strip()

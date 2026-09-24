@@ -1,6 +1,8 @@
 import unittest
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
+from zipfile import ZipFile
 
 from flask import Flask, g, session
 from flask_login import LoginManager, login_user, logout_user
@@ -29,6 +31,8 @@ class TenancyFoundationTestCase(unittest.TestCase):
             return db.session.get(User, int(user_id))
 
         register_tenancy_context(self.app)
+        from app.controllers.main import main as main_blueprint
+        self.app.register_blueprint(main_blueprint)
         self.app.add_url_rule("/protected", "protected", self.protected)
         self.app.add_url_rule("/logout", "logout", self.logout)
         self.app.add_url_rule("/account", "auth.perfil", self.account)
@@ -276,6 +280,114 @@ class TenancyFoundationTestCase(unittest.TestCase):
                 sale = Venda.query.one()
 
         self.assertEqual(sale.organization_id, organization_id)
+
+    def create_read_isolation_fixture(self):
+        records = []
+        with self.app.app_context():
+            for index, product_id in enumerate((5, 6), start=1):
+                user = User(
+                    username=f"tenant{index}",
+                    email=f"tenant{index}@example.com",
+                    password_hash="x",
+                )
+                organization = Organization(name=f"Tenant {index}")
+                db.session.add_all([user, organization])
+                db.session.flush()
+                membership = OrganizationUser(
+                    organization_id=organization.id,
+                    user_id=user.id,
+                    role="member",
+                    active=True,
+                )
+                product = Produto(
+                    id=product_id,
+                    organization_id=organization.id,
+                    nome=f"Produto {index}",
+                    preco=10,
+                )
+                seller = Vendedor(
+                    organization_id=organization.id,
+                    nome=f"Vendedor {index}",
+                )
+                db.session.add_all([membership, product, seller])
+                db.session.flush()
+                sale = Venda(
+                    organization_id=organization.id,
+                    produto_id=product.id,
+                    vendedor_id=seller.id,
+                    comprador_nome=f"Cliente {index}",
+                    quantidade=index,
+                    tipo_vendedor="Jovem",
+                    status_pagamento="Pago",
+                    valor_total=10 * index,
+                )
+                db.session.add(sale)
+                db.session.flush()
+                records.append((user.id, organization.id, sale.id))
+            db.session.commit()
+        return records
+
+    def test_read_apis_return_only_the_current_organization(self):
+        records = self.create_read_isolation_fixture()
+        user_id, organization_id, own_sale_id = records[0]
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = organization_id
+
+            products = client.get("/buscar-produtos?q=Produto")
+            sellers = client.get("/buscar-vendedores?q=Vendedor")
+            sales = client.get("/api/vendas")
+            foreign_detail = client.get(f"/api/vendas/{records[1][2]}")
+
+        self.assertEqual([item["nome"] for item in products.json], ["Produto 1"])
+        self.assertEqual([item["nome"] for item in sellers.json], ["Vendedor 1"])
+        self.assertEqual([item["id"] for item in sales.json], [own_sale_id])
+        self.assertEqual(foreign_detail.status_code, 404)
+
+    def test_dashboard_and_reports_use_only_the_current_organization(self):
+        records = self.create_read_isolation_fixture()
+        user_id, organization_id, _ = records[0]
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = organization_id
+
+            report = client.get("/api/relatorios")
+            ranking = client.get("/api/ranking")
+            weekly = client.get("/api/vendas-semanais")
+
+        self.assertEqual(report.json["total_valor"], 10)
+        self.assertEqual(report.json["total_vendas"], 1)
+        self.assertEqual(report.json["ranking"][0]["nome"], "Vendedor 1")
+        self.assertEqual(sum(weekly.json["valores"]), 10)
+
+    def test_foreign_sale_mutations_and_exports_are_blocked(self):
+        records = self.create_read_isolation_fixture()
+        user_id, organization_id, _ = records[0]
+        foreign_sale_id = records[1][2]
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = organization_id
+
+            edit = client.get(f"/editar-venda/{foreign_sale_id}")
+            delete = client.delete(f"/api/vendas/{foreign_sale_id}")
+            payment = client.post(
+                f"/api/vendas/{foreign_sale_id}/status/pagamento"
+            )
+            delivery = client.post(f"/api/vendas/{foreign_sale_id}/entrega")
+            export_response = client.get("/exportar-vendas")
+
+        self.assertEqual(edit.status_code, 404)
+        self.assertEqual(delete.status_code, 404)
+        self.assertEqual(payment.status_code, 404)
+        self.assertEqual(delivery.status_code, 404)
+        self.assertEqual(export_response.status_code, 200)
+        with ZipFile(BytesIO(export_response.data)) as workbook:
+            shared_strings = workbook.read("xl/sharedStrings.xml")
+        self.assertIn(b"Cliente 1", shared_strings)
+        self.assertNotIn(b"Cliente 2", shared_strings)
 
 
 if __name__ == "__main__":
