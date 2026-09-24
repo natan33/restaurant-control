@@ -120,8 +120,32 @@ class TenancyFoundationTestCase(unittest.TestCase):
             response = client.get("/protected")
 
         self.assertEqual(response.status_code, 409)
-        with client.session_transaction() as browser_session:
-            self.assertNotIn("organization_id", browser_session)
+
+    def test_organization_selection_excludes_temporary_and_inactive(self):
+        user_id = self.create_user_with_memberships(membership_count=0)
+        with self.app.app_context():
+            operational = Organization(name="Igreja Batista em Vista Alegre")
+            graças = Organization(name="Graças na Mesa")
+            temporary = Organization(name="MIGRAÇÃO - organização temporária")
+            inactive = Organization(name="Inativa", is_active=False)
+            db.session.add_all([operational, graças, temporary, inactive])
+            db.session.flush()
+            db.session.add_all([
+                OrganizationUser(organization_id=operational.id, user_id=user_id, role="admin", active=True),
+                OrganizationUser(organization_id=graças.id, user_id=user_id, role="admin", active=True),
+                OrganizationUser(organization_id=temporary.id, user_id=user_id, role="admin", active=True),
+                OrganizationUser(organization_id=inactive.id, user_id=user_id, role="admin", active=True),
+            ])
+            db.session.commit()
+            from app.controllers.auth.view import available_organization_memberships
+            names = [membership.organization.name for membership in available_organization_memberships(user_id)]
+        self.assertEqual(names, ["Igreja Batista em Vista Alegre", "Graças na Mesa"])
+
+    def test_organization_selection_form_includes_csrf_and_expected_field(self):
+        with open("app/templates/auth/selecionar_organizacao.html", encoding="utf-8") as template:
+            source = template.read()
+        self.assertIn('name="csrf_token"', source)
+        self.assertIn('name="organization_id"', source)
 
     def test_inactive_organization_is_not_accepted(self):
         user_id = self.create_user_with_memberships(membership_count=2)

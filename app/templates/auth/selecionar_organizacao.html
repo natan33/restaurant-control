@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>tailwind.config = { theme: { extend: { colors: { primary: "#F39C12", secondary: "#2C3E50" }, fontFamily: { display: ["Public Sans", "sans-serif"] } } } };</script>
+    <title>Selecionar organização</title>
+</head>
+<body class="bg-white min-h-screen flex items-center justify-center px-4 font-display text-secondary">
+    <main class="w-full max-w-sm">
+        <div class="text-center mb-8">
+            <div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4"><span class="text-primary text-3xl" aria-hidden="true">◆</span></div>
+            <h1 class="text-2xl font-bold">Selecione a organização</h1>
+            <p class="text-sm text-slate-500 mt-2">Escolha onde deseja operar nesta sessão.</p>
+        </div>
+        <section class="bg-white border border-slate-200 rounded-xl shadow-sm p-4 space-y-3" aria-label="Organizações disponíveis">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}<p role="alert" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{{ message }}</p>{% endfor %}
+            {% endwith %}
+            <form method="post" class="space-y-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% for membership in memberships %}
+                    <button type="submit" name="organization_id" value="{{ membership.organization_id }}" class="w-full rounded-lg border border-slate-200 px-4 py-4 text-left hover:border-primary hover:bg-primary/5 transition focus:ring-2 focus:ring-primary">
+                        <span class="block font-bold">{{ membership.organization.name }}</span>
+                        <span class="block text-sm text-slate-500 mt-1">{{ membership.role|capitalize }}</span>
+                    </button>
+                {% else %}<p class="text-sm text-slate-500">Nenhuma organização operacional disponível.</p>{% endfor %}
+            </form>
+        </section>
+    </main>
+</body>
+</html>
