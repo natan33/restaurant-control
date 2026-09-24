@@ -30,7 +30,6 @@ def index():
             .filter(
                 func.date(Venda.data_venda) == dia.date(),
                 Venda.organization_id == organization.id,
-                Venda.produto_id.in_([5, 6])   #  AQUI
             ).scalar()
         
         # Forçamos o tipo float para evitar erros de divisão no template
@@ -44,7 +43,7 @@ def index():
     #total_vendido = db.session.query(func.sum(Venda.valor_total)).scalar() or 0
 
     total_vendido = db.session.query(func.sum(Venda.valor_total))\
-    .filter(Venda.organization_id == organization.id, Venda.produto_id.in_([5, 6]))\
+    .filter(Venda.organization_id == organization.id)\
     .scalar() or 0
 
 
@@ -65,7 +64,7 @@ def index():
                     else_=0
                 )
             )
-        ).filter(Venda.organization_id == organization.id, Venda.produto_id.in_([5, 6])).scalar() or 0
+        ).filter(Venda.organization_id == organization.id).scalar() or 0
 
 
     # Ajustado: removido os parênteses extras/listas de dentro do case
@@ -85,7 +84,7 @@ def index():
                     else_=0
                 )
             )
-        ).filter(Venda.organization_id == organization.id, Venda.produto_id.in_([5, 6])).scalar() or 0
+        ).filter(Venda.organization_id == organization.id).scalar() or 0
 
 
     percentual_pago = round(total_pago / total_vendido * 100) if total_vendido else 0
@@ -98,7 +97,7 @@ def index():
     qtd_faturas = db.session.query(func.sum(
         case((Venda.status_pagamento == "Pendente", 1), else_=0)
         ).label("pendente")
-    ).filter(Venda.organization_id == organization.id, Venda.produto_id.in_([5, 6])).first() or 0
+    ).filter(Venda.organization_id == organization.id).first() or 0
 
     
 
@@ -113,7 +112,7 @@ def index():
         func.sum(Venda.valor_total).label("total")
     ).filter(Venda.organization_id == organization.id,
              Venda.tipo_vendedor == "Jovem",
-             Venda.produto_id.in_([5, 6])) \
+             ) \
     .group_by(Venda.vendedor_id) \
     .order_by(func.sum(Venda.valor_total).desc()) \
     .all()
@@ -205,7 +204,7 @@ def api_relatorios():
     query = db.session.query(Venda).join(Vendedor)\
     .filter(Venda.organization_id == organization.id,
             Vendedor.organization_id == organization.id,
-            Venda.produto_id.in_([5, 6]))
+            )
 
     if vendedor_nome:
         query = query.filter(Vendedor.nome.ilike(f"%{vendedor_nome}%"))
@@ -230,7 +229,6 @@ def api_relatorios():
         .filter(
             Venda.organization_id == organization.id,
             Vendedor.organization_id == organization.id,
-            Venda.produto_id.in_([5, 6]),  # 👈 AQUI
             Vendedor.nome.ilike(f"%{vendedor_nome}%") if vendedor_nome else True
         )
         .group_by(func.date(Venda.data_venda))
@@ -252,7 +250,6 @@ def api_relatorios():
         .filter(
             Venda.organization_id == organization.id,
             Vendedor.organization_id == organization.id,
-            Venda.produto_id.in_([5, 6]),
         )
         .order_by(func.sum(Venda.quantidade).desc())
         .limit(5)
@@ -313,7 +310,7 @@ def api_ranking():
         .join(Venda)
         .filter(Venda.organization_id == organization.id,
                 Vendedor.organization_id == organization.id,
-                Venda.produto_id.in_([5, 6]))
+                )
     )
 
     if vendedor:
@@ -374,7 +371,7 @@ def exportar_excel():
         .filter(Venda.organization_id == organization.id,
                 Vendedor.organization_id == organization.id,
                 Produto.organization_id == organization.id,
-                Venda.produto_id.in_([5, 6]))
+                )
         .order_by(Venda.id.asc())
     )
 

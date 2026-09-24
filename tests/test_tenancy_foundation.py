@@ -284,7 +284,7 @@ class TenancyFoundationTestCase(unittest.TestCase):
     def create_read_isolation_fixture(self):
         records = []
         with self.app.app_context():
-            for index, product_id in enumerate((5, 6), start=1):
+            for index in (1, 2):
                 user = User(
                     username=f"tenant{index}",
                     email=f"tenant{index}@example.com",
@@ -300,7 +300,6 @@ class TenancyFoundationTestCase(unittest.TestCase):
                     active=True,
                 )
                 product = Produto(
-                    id=product_id,
                     organization_id=organization.id,
                     nome=f"Produto {index}",
                     preco=10,

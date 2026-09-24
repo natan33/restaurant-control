@@ -149,8 +149,6 @@ def api_vendas():
         Produto.organization_id == organization.id,
     )
 
-    # filtra somente as de dobradinha
-    query = query.filter(Venda.produto_id.in_([5, 6]))
 
     # =========================
     # FILTRO ESPECÍFICO: DATA
@@ -262,10 +260,10 @@ def api_cards_gestao():
 
     vendas = Venda.query.filter_by(organization_id=organization.id).all()
 
-    total = sum(v.quantidade for v in vendas if v.produto_id in [5,6] )
-    pagos = sum(v.quantidade for v in vendas if v.produto_id in [5,6] if v.status_pagamento == "Pago" )
-    pendentes = sum(v.quantidade for v in vendas if v.produto_id in [5,6] if v.status_pagamento != "Pago")
-    pendentes_entrega = sum(v.quantidade for v in vendas if v.produto_id in [5,6] if v.status_entrega == "Entregue")
+    total = sum(v.quantidade for v in vendas)
+    pagos = sum(v.quantidade for v in vendas if v.status_pagamento == "Pago")
+    pendentes = sum(v.quantidade for v in vendas if v.status_pagamento != "Pago")
+    pendentes_entrega = sum(v.quantidade for v in vendas if v.status_entrega == "Entregue")
 
     return jsonify({
         "total": total or 0,
@@ -414,7 +412,6 @@ def exportar_vendas():
         Vendedor.organization_id == organization.id,
         Produto.organization_id == organization.id,
     ).order_by(Vendedor.nome.asc(), Venda.id.asc())
-    query = query.filter(Venda.produto_id.in_([5, 6]))
     
     q = request.args.get('q', '').strip()
     if q:
