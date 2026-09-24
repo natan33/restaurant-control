@@ -5,6 +5,7 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 from zipfile import ZipFile
+from jinja2 import FileSystemLoader
 
 from flask import Flask, g, session
 from flask_login import LoginManager, login_user, logout_user
@@ -146,6 +147,81 @@ class TenancyFoundationTestCase(unittest.TestCase):
             source = template.read()
         self.assertIn('name="csrf_token"', source)
         self.assertIn('name="organization_id"', source)
+
+    def test_gracas_catalog_is_idempotent_and_tenant_scoped(self):
+        with self.app.app_context():
+            gracas = Organization(name="Graças na Mesa")
+            igreja = Organization(name="Igreja Batista em Vista Alegre")
+            db.session.add_all([gracas, igreja])
+            db.session.flush()
+            from app.bootstrap_data import GRACAS_NA_MESA_PRODUCTS, sync_gracas_products
+            first = sync_gracas_products(gracas, Produto, db.session)
+            second = sync_gracas_products(gracas, Produto, db.session)
+            products = Produto.query.filter_by(organization_id=gracas.id).all()
+            church_products = Produto.query.filter_by(organization_id=igreja.id).all()
+        self.assertEqual(len(first["created"]), 10)
+        self.assertEqual(len(second["created"]), 0)
+        self.assertEqual(len(second["existing"]), 10)
+        self.assertEqual(len(products), len(GRACAS_NA_MESA_PRODUCTS))
+        self.assertEqual(len(church_products), 0)
+        self.assertEqual(
+            {product.nome: round(product.preco, 2) for product in products},
+            dict(GRACAS_NA_MESA_PRODUCTS),
+        )
+
+    def test_gracas_catalog_sync_updates_price_without_duplicates(self):
+        with self.app.app_context():
+            gracas = Organization(name="Graças na Mesa")
+            db.session.add(gracas)
+            db.session.flush()
+            db.session.add(Produto(organization_id=gracas.id, nome="Combo 1 - Moqueca + Pepsi 1L", preco=1))
+            db.session.commit()
+            from app.bootstrap_data import sync_gracas_products
+            result = sync_gracas_products(gracas, Produto, db.session)
+            combo = Produto.query.filter_by(organization_id=gracas.id, nome="Combo 1 - Moqueca + Pepsi 1L").all()
+        self.assertEqual(len(combo), 1)
+        self.assertEqual(combo[0].preco, 37.90)
+        self.assertEqual(result["updated"], [("Combo 1 - Moqueca + Pepsi 1L", 1.0, 37.9)])
+
+    def test_admin_product_management_is_tenant_scoped_and_validates(self):
+        self.app.jinja_loader = FileSystemLoader("app/templates")
+        self.app.jinja_env.globals["csrf_token"] = lambda: "test-token"
+        user_id = self.create_user_with_memberships(membership_count=2)
+        with self.app.app_context():
+            memberships = OrganizationUser.query.filter_by(user_id=user_id).order_by(OrganizationUser.organization_id).all()
+            first_id, second_id = memberships[0].organization_id, memberships[1].organization_id
+            memberships[0].role = memberships[1].role = "admin"
+            other = Produto(organization_id=second_id, nome="Somente B", preco=9)
+            db.session.add(other)
+            db.session.commit()
+            other_id = other.id
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = first_id
+            self.assertEqual(client.get("/produtos").status_code, 200)
+            self.assertNotIn(b"Somente B", client.get("/produtos").data)
+            created = client.post("/produtos/novo", data={"nome": "Produto A", "preco": "12", "organization_id": second_id})
+            self.assertEqual(created.status_code, 302)
+            duplicate = client.post("/produtos/novo", data={"nome": "  Produto A ", "preco": "13"})
+            self.assertEqual(duplicate.status_code, 200)
+            foreign_edit = client.post(f"/produtos/{other_id}/editar", data={"nome": "Alterado", "preco": "10"})
+            self.assertEqual(foreign_edit.status_code, 404)
+            invalid_price = client.post("/produtos/novo", data={"nome": "Inválido", "preco": "0"})
+            self.assertEqual(invalid_price.status_code, 200)
+        with self.app.app_context():
+            self.assertIsNotNone(Produto.query.filter_by(organization_id=first_id, nome="Produto A").one_or_none())
+            self.assertIsNone(Produto.query.filter_by(organization_id=second_id, nome="Produto A").one_or_none())
+
+    def test_member_cannot_manage_products(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization_id = Organization.query.one().id
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = organization_id
+            self.assertEqual(client.post("/produtos/novo", data={"nome": "Bloqueado", "preco": "10"}).status_code, 403)
 
     def test_inactive_organization_is_not_accepted(self):
         user_id = self.create_user_with_memberships(membership_count=2)

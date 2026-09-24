@@ -10,6 +10,7 @@ DEFAULT_TENANCY_EXEMPT_ENDPOINTS = {
     "auth.perfil",
     "auth.redefinir_senha",
     "tenancy.select_organization",
+    "auth.selecionar_organizacao",
     "tenancy.onboarding",
 }
 

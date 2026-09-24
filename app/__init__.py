@@ -178,6 +178,37 @@ def create_app(config_name: str):
             click.echo("Vendedores existentes: " + ", ".join(seller.nome for seller in sellers))
         else:
             click.echo("Nenhum vendedor cadastrado; o nome será criado no primeiro lançamento de venda.")
+
+    @app.cli.command("bootstrap-gracas-na-mesa-data")
+    @click.option("--user-id", type=int, required=True, help="ID do administrador autorizado")
+    def bootstrap_gracas_na_mesa_data(user_id):
+        """Sincroniza o catálogo confirmado do Graças na Mesa."""
+        from app.bootstrap_data import sync_gracas_products
+        from app.models.auth.user import User
+        from app.models.pages.gerenciamento_vendas import Produto
+        from app.models.tenancy import Organization, OrganizationUser
+
+        user = db.session.get(User, user_id)
+        organization = Organization.query.filter_by(
+            name="Graças na Mesa", is_active=True
+        ).one_or_none()
+        if user is None:
+            raise click.ClickException(f"Usuário não encontrado: {user_id}")
+        if organization is None:
+            raise click.ClickException("Organização Graças na Mesa não encontrada ou inativa")
+        membership = OrganizationUser.query.filter_by(
+            user_id=user.id, organization_id=organization.id, role="admin", active=True
+        ).one_or_none()
+        if membership is None:
+            raise click.ClickException("Usuário não possui membership admin ativa no Graças na Mesa")
+
+        result = sync_gracas_products(organization, Produto, db.session)
+        for name in result["created"]:
+            click.echo(f"Criado: {name}")
+        for name, old, new in result["updated"]:
+            click.echo(f"Preço atualizado: {name} — R$ {old:.2f} -> R$ {new:.2f}")
+        for name in result["existing"]:
+            click.echo(f"Já existente: {name}")
     # app.register_blueprint(api_blueprint)
 
 

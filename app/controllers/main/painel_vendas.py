@@ -237,7 +237,7 @@ def nova_venda():
     organization = get_current_organization()
 
     # carregar produtos
-    produtos = Produto.query.filter_by(organization_id=organization.id).all()
+    produtos = Produto.query.filter_by(organization_id=organization.id, ativo=True).all()
     form.produto_id.choices = [(p.id, p.nome) for p in produtos]
     form.produto_precos = {p.id: p.preco for p in produtos}
 
@@ -518,13 +518,16 @@ def editar_venda(venda_id):
     form = VendaForm()
     organization = get_current_organization()
 
-    produtos = Produto.query.filter_by(organization_id=organization.id).all()
-    form.produto_id.choices = [(p.id, p.nome) for p in produtos]
-    form.produto_precos = {p.id: p.preco for p in produtos}
-
     venda = Venda.query.filter_by(
         id=venda_id, organization_id=organization.id
     ).first_or_404()
+    existing_product_ids = [item.produto_id for item in venda.items]
+    produtos = Produto.query.filter(
+        Produto.organization_id == organization.id,
+        db.or_(Produto.ativo.is_(True), Produto.id.in_(existing_product_ids or [-1])),
+    ).all()
+    form.produto_id.choices = [(p.id, p.nome) for p in produtos]
+    form.produto_precos = {p.id: p.preco for p in produtos}
 
     produto_nome = None
     vendedor_nome = None

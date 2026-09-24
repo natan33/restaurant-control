@@ -1,7 +1,8 @@
 import random
-from flask import flash, redirect, render_template, session, url_for
+from flask import flash, get_flashed_messages, redirect, render_template, session, url_for
 from flask_login import login_user, logout_user
 from app.models.auth.user import User
+from app.models.tenancy import OrganizationUser
 from app import db
 import logging
 
@@ -21,10 +22,18 @@ class ServiceAutentication:
                 user = User.query.filter_by(email=str(self.form.email.data).lower()).first()
 
                 if user and user.check_password(self.form.password.data):
+                    # Não carregue mensagens de uma tentativa anterior para a tela pós-login.
+                    get_flashed_messages(with_categories=True)
                     login_user(user, remember=self.form.remember_me.data)
                     logger.info(f"Usuário {user.email} logado via sessão.")
                     next_page = self.request.args.get('next')
-                    return redirect(next_page or url_for('main.index'))
+                    if next_page:
+                        return redirect(next_page)
+                    memberships = OrganizationUser.query.filter_by(
+                        user_id=user.id, active=True
+                    ).count()
+                    destination = "auth.selecionar_organizacao" if memberships > 1 else "main.index"
+                    return redirect(url_for(destination))
                 
                 # Caso falhe a senha ou usuário
                 logger.warning(f"Falha de login para o email: {self.form.email.data}")

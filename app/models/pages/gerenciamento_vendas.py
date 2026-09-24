@@ -13,10 +13,17 @@ class Produto(db.Model):
     )
     nome = db.Column(db.String(120), nullable=False)
     preco = db.Column(db.Float, nullable=False)
+    ativo = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true(), index=True)
 
     vendas = db.relationship("Venda", backref="produto", lazy=True)
 
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
 
     update_at = db.Column(
         db.DateTime, 
