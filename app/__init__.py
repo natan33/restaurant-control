@@ -1,4 +1,5 @@
 import logging
+import click
 import time
 from datetime import timedelta
 
@@ -49,6 +50,7 @@ def create_app(config_name: str):
             "auth.perfil",
             "auth.redefinir_senha",
             "tenancy.select_organization",
+            "auth.selecionar_organizacao",
             "tenancy.onboarding",
         },
     )
@@ -93,6 +95,89 @@ def create_app(config_name: str):
 
     app.register_blueprint(auth_blueprint)
     app.register_blueprint(main_blueprint)
+
+    @app.cli.command("bootstrap-organizations")
+    @click.option("--user-id", type=int, required=True, help="ID do usuário administrador")
+    def bootstrap_organizations(user_id):
+        """Cria as organizações iniciais e associa o administrador idempotentemente."""
+        from app.models.auth.user import User
+        from app.models.pages.gerenciamento_vendas import Produto, Venda, VendaItem, VendaPagamento, Vendedor
+        from app.models.tenancy import Organization, OrganizationUser
+
+        user = db.session.get(User, user_id)
+        if user is None:
+            raise click.ClickException(f"Usuário não encontrado: {user_id}")
+        organizations = []
+        for name in ("Igreja Batista em Vista Alegre", "Graças na Mesa"):
+            organization = Organization.query.filter_by(name=name).one_or_none()
+            if organization is None:
+                organization = Organization(name=name, is_active=True)
+                db.session.add(organization)
+                db.session.flush()
+            else:
+                organization.is_active = True
+            membership = OrganizationUser.query.filter_by(
+                organization_id=organization.id, user_id=user.id
+            ).one_or_none()
+            if membership is None:
+                db.session.add(OrganizationUser(
+                    organization_id=organization.id, user_id=user.id,
+                    role="admin", active=True,
+                ))
+            else:
+                membership.role = "admin"
+                membership.active = True
+            organizations.append(organization)
+        db.session.commit()
+
+        temporary = Organization.query.filter_by(name="MIGRAÇÃO - organização temporária").one_or_none()
+        click.echo(f"Administrador: {user.id} ({user.username})")
+        for organization in organizations:
+            click.echo(f"{organization.id}: {organization.name} (admin ativo)")
+        if temporary is not None:
+            for model, label in ((Venda, "Venda"), (VendaItem, "VendaItem"),
+                                 (VendaPagamento, "VendaPagamento"), (Produto, "Produto"),
+                                 (Vendedor, "Vendedor")):
+                click.echo(f"Temporária - {label}: {model.query.filter_by(organization_id=temporary.id).count()}")
+
+    @app.cli.command("bootstrap-church-data")
+    @click.option("--user-id", type=int, required=True, help="ID do administrador autorizado")
+    def bootstrap_church_data(user_id):
+        """Cadastra o produto inicial da Igreja Batista de forma idempotente."""
+        from app.models.auth.user import User
+        from app.models.pages.gerenciamento_vendas import Produto, Vendedor
+        from app.models.tenancy import Organization, OrganizationUser
+
+        user = db.session.get(User, user_id)
+        organization = Organization.query.filter_by(
+            name="Igreja Batista em Vista Alegre", is_active=True
+        ).one_or_none()
+        if user is None:
+            raise click.ClickException(f"Usuário não encontrado: {user_id}")
+        if organization is None:
+            raise click.ClickException("Organização Igreja Batista em Vista Alegre não encontrada ou inativa")
+        membership = OrganizationUser.query.filter_by(
+            user_id=user.id, organization_id=organization.id, role="admin", active=True
+        ).one_or_none()
+        if membership is None:
+            raise click.ClickException("Usuário não possui membership admin ativa na Igreja")
+
+        product = Produto.query.filter_by(
+            organization_id=organization.id, nome="Xinxim"
+        ).one_or_none()
+        if product is None:
+            product = Produto(organization_id=organization.id, nome="Xinxim", preco=20.00)
+            db.session.add(product)
+            db.session.commit()
+            click.echo("Criado: Xinxim — R$ 20,00")
+        else:
+            click.echo(f"Já existente: Xinxim (id={product.id}, preço=R$ {product.preco:.2f})")
+
+        sellers = Vendedor.query.filter_by(organization_id=organization.id).order_by(Vendedor.nome).all()
+        if sellers:
+            click.echo("Vendedores existentes: " + ", ".join(seller.nome for seller in sellers))
+        else:
+            click.echo("Nenhum vendedor cadastrado; o nome será criado no primeiro lançamento de venda.")
     # app.register_blueprint(api_blueprint)
 
 
