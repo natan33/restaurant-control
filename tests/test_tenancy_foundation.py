@@ -199,8 +199,12 @@ class TenancyFoundationTestCase(unittest.TestCase):
             with client.session_transaction() as browser_session:
                 browser_session["_user_id"] = str(user_id)
                 browser_session["organization_id"] = first_id
-            self.assertEqual(client.get("/produtos").status_code, 200)
-            self.assertNotIn(b"Somente B", client.get("/produtos").data)
+            products_page = client.get("/produtos")
+            self.assertEqual(products_page.status_code, 200)
+            self.assertIn(b"+ Novo produto", products_page.data)
+            self.assertIn(b"Produtos", products_page.data)
+            self.assertIn(b"Organization 0", products_page.data)
+            self.assertNotIn(b"Somente B", products_page.data)
             created = client.post("/produtos/novo", data={"nome": "Produto A", "preco": "12", "organization_id": second_id})
             self.assertEqual(created.status_code, 302)
             duplicate = client.post("/produtos/novo", data={"nome": "  Produto A ", "preco": "13"})
@@ -214,6 +218,8 @@ class TenancyFoundationTestCase(unittest.TestCase):
             self.assertIsNone(Produto.query.filter_by(organization_id=second_id, nome="Produto A").one_or_none())
 
     def test_member_cannot_manage_products(self):
+        self.app.jinja_loader = FileSystemLoader("app/templates")
+        self.app.jinja_env.globals["csrf_token"] = lambda: "test-token"
         user_id = self.create_user_with_memberships()
         with self.app.app_context():
             organization_id = Organization.query.one().id
@@ -221,6 +227,7 @@ class TenancyFoundationTestCase(unittest.TestCase):
             with client.session_transaction() as browser_session:
                 browser_session["_user_id"] = str(user_id)
                 browser_session["organization_id"] = organization_id
+            self.assertNotIn(b"+ Novo produto", client.get("/produtos").data)
             self.assertEqual(client.post("/produtos/novo", data={"nome": "Bloqueado", "preco": "10"}).status_code, 403)
 
     def test_inactive_organization_is_not_accepted(self):

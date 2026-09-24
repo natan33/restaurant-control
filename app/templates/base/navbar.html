@@ -15,6 +15,12 @@
                 <p class="text-[10px] font-bold uppercase tracking-tighter">Vendas</p>
             </a>
 
+            <a class="flex flex-col items-center gap-1 transition-colors {{ 'text-primary' if request.endpoint in ['main.produtos', 'main.novo_produto', 'main.editar_produto'] else 'text-slate-400 dark:text-slate-500 hover:text-primary' }}"
+                href="{{ url_for('main.produtos') }}">
+                <span class="material-symbols-outlined">inventory_2</span>
+                <p class="text-[10px] font-bold uppercase tracking-tighter">Produtos</p>
+            </a>
+
             <a class="flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-primary transition-colors"
                 href="{{ url_for('main.relatorios') }}">
                 <span class="material-symbols-outlined">bar_chart</span>
