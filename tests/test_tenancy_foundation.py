@@ -1,4 +1,5 @@
 import unittest
+import importlib.util
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -10,7 +11,7 @@ from flask_login import LoginManager, login_user, logout_user
 from app import db
 from app.core.tenancy import register_tenancy_context
 from app.models.auth.user import User
-from app.models.pages.gerenciamento_vendas import Produto, Venda, Vendedor
+from app.models.pages.gerenciamento_vendas import Produto, Venda, VendaItem, Vendedor
 from app.models.tenancy import Organization, OrganizationUser
 
 
@@ -237,6 +238,93 @@ class TenancyFoundationTestCase(unittest.TestCase):
             self.assertEqual(product.organization_id, organization.id)
             self.assertEqual(seller.organization_id, organization.id)
             self.assertEqual(sale.organization_id, organization.id)
+
+    def test_venda_items_preserve_tenant_and_relationships(self):
+        self.create_user_with_memberships()
+        with self.app.app_context():
+            organization = Organization.query.one()
+            product = Produto(
+                organization_id=organization.id, nome="Produto", preco=12
+            )
+            seller = Vendedor(
+                organization_id=organization.id, nome="Vendedor"
+            )
+            sale = Venda(
+                organization_id=organization.id,
+                produto_id=1,
+                vendedor_id=1,
+                comprador_nome="Cliente",
+                quantidade=2,
+                tipo_vendedor="Membro",
+                status_pagamento="Pendente",
+                valor_total=24,
+            )
+            db.session.add_all([product, seller])
+            db.session.flush()
+            sale.produto_id = product.id
+            sale.vendedor_id = seller.id
+            db.session.add(sale)
+            db.session.flush()
+            item = VendaItem(
+                venda=sale,
+                produto=product,
+                organization_id=organization.id,
+                quantidade=2,
+                preco_unitario="12.000000",
+                subtotal="24.000000",
+            )
+            db.session.add(item)
+            db.session.commit()
+
+            self.assertEqual(sale.items, [item])
+            self.assertIs(item.venda, sale)
+            self.assertIs(item.produto, product)
+
+    def test_venda_item_rejects_foreign_tenant_product(self):
+        self.create_user_with_memberships(membership_count=1)
+        with self.app.app_context():
+            first_org, second_org = Organization(name="A"), Organization(name="B")
+            db.session.add_all([first_org, second_org])
+            db.session.flush()
+            product_a = Produto(organization_id=first_org.id, nome="A", preco=10)
+            product_b = Produto(organization_id=second_org.id, nome="B", preco=10)
+            seller = Vendedor(organization_id=first_org.id, nome="Seller")
+            db.session.add_all([product_a, product_b, seller])
+            db.session.flush()
+            sale = Venda(
+                organization_id=first_org.id,
+                produto_id=product_a.id,
+                vendedor_id=seller.id,
+                comprador_nome="Cliente",
+                quantidade=1,
+                tipo_vendedor="Membro",
+                status_pagamento="Pendente",
+                valor_total=10,
+            )
+            db.session.add(sale)
+            db.session.flush()
+            db.session.add(VendaItem(
+                venda=sale,
+                produto=product_b,
+                organization_id=first_org.id,
+                quantidade=1,
+                preco_unitario="10",
+                subtotal="10",
+            ))
+            with self.assertRaises(ValueError):
+                db.session.commit()
+            db.session.rollback()
+
+    def test_legacy_price_reconstruction_rejects_invalid_quantities(self):
+        module_path = "migrations/versions/d9f4a5b6c7e8_cria_venda_itens.py"
+        spec = importlib.util.spec_from_file_location("venda_item_migration", module_path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+
+        self.assertEqual(str(migration.validate_legacy_values(2, 10)), "5")
+        for quantity, total in ((None, 10), (0, 10), (-1, 10), (1, None)):
+            with self.assertRaises(ValueError):
+                migration.validate_legacy_values(quantity, total)
 
     def test_sale_write_ignores_request_organization_id(self):
         user_id = self.create_user_with_memberships()

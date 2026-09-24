@@ -1,5 +1,7 @@
 from app import db
 from datetime import datetime, timezone
+from sqlalchemy import event
+from sqlalchemy.orm import object_session
 
 
 class Produto(db.Model):
@@ -110,6 +112,50 @@ class Venda(db.Model):
     status_entrega = db.Column(db.String(20), default="Pendente")  # "Pendente" ou "Entregue"
     data_entrega = db.Column(db.DateTime, nullable=True)
 
+    items = db.relationship(
+        "VendaItem",
+        back_populates="venda",
+        cascade="all, delete-orphan",
+    )
+
 
     def __repr__(self):
         return f"<Venda {self.id}>"
+
+
+class VendaItem(db.Model):
+    __tablename__ = "venda_itens"
+    __table_args__ = (
+        db.CheckConstraint("quantidade > 0", name="ck_venda_item_quantidade_positiva"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    venda_id = db.Column(
+        db.Integer, db.ForeignKey("vendas.id"), nullable=False, index=True
+    )
+    organization_id = db.Column(
+        db.Integer, db.ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    produto_id = db.Column(
+        db.Integer, db.ForeignKey("produtos.id"), nullable=False, index=True
+    )
+    quantidade = db.Column(db.Integer, nullable=False)
+    preco_unitario = db.Column(db.Numeric(18, 6), nullable=False)
+    subtotal = db.Column(db.Numeric(18, 6), nullable=False)
+
+    venda = db.relationship("Venda", back_populates="items")
+    produto = db.relationship("Produto")
+
+
+@event.listens_for(VendaItem, "before_insert")
+@event.listens_for(VendaItem, "before_update")
+def validate_venda_item_tenant(mapper, connection, target):
+    session = object_session(target)
+    venda = target.venda or (session.get(Venda, target.venda_id) if session else None)
+    produto = target.produto or (session.get(Produto, target.produto_id) if session else None)
+    if venda is None or produto is None:
+        return
+    if target.organization_id != venda.organization_id:
+        raise ValueError("VendaItem e Venda devem pertencer à mesma organização")
+    if produto.organization_id != target.organization_id:
+        raise ValueError("Produto deve pertencer à organização da VendaItem")
