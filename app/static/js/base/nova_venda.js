@@ -93,11 +93,14 @@ document.addEventListener("DOMContentLoaded", () => {
         legacyQuantity.value = items[0].quantidade;
         try {
             const response = await fetch(form.action, { method: "POST", body: new FormData(form) });
-            if (!response.ok) throw new Error("request failed");
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || result.success !== true) {
+                throw new Error(result.error || "Não foi possível salvar a venda.");
+            }
             await Swal.fire({ icon: "success", title: form.dataset.vendaId ? "Venda atualizada!" : "Venda registrada!", showConfirmButton: false, timer: 1500 });
             if (!form.dataset.vendaId) window.location.reload();
-        } catch (_) {
-            showError("Não foi possível salvar a venda. Verifique os dados e tente novamente.");
+        } catch (exception) {
+            showError(exception.message || "Não foi possível salvar a venda. Verifique os dados e tente novamente.");
         }
     });
 

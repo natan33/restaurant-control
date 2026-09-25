@@ -634,6 +634,39 @@ class TenancyFoundationTestCase(unittest.TestCase):
         self.assertEqual([item.quantidade for item in items], [2, 3])
         self.assertEqual([float(item.preco_unitario) for item in items], [10.25, 3.5])
 
+    def test_gracas_sale_without_seller_type_persists_in_current_tenant(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization = Organization.query.one()
+            organization.settings = {"show_seller_type": False, "theme_key": "gracas-na-mesa"}
+            product = Produto(organization_id=organization.id, nome="Prato", preco=20)
+            db.session.add(product)
+            db.session.commit()
+            product_id, organization_id = product.id, organization.id
+
+        from app.controllers.main import painel_vendas
+        from flask_login import login_user
+
+        form = self.multi_item_form()
+        form.tipo_vendedor.data = None
+        with self.app.test_request_context(
+            "/nova-venda", method="POST",
+            data={"items": json.dumps([{"produto_id": product_id, "quantidade": 1}]),
+                  "vendedor_nome": "Vendedor"},
+        ):
+            login_user(db.session.get(User, user_id))
+            from app.core.tenancy import resolve_current_organization
+            resolve_current_organization()
+            with patch.object(painel_vendas, "VendaForm", return_value=form):
+                response = painel_vendas.nova_venda()
+
+        with self.app.app_context():
+            sale = Venda.query.one()
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(sale.organization_id, organization_id)
+            self.assertEqual(sale.tipo_vendedor, "Membro")
+            self.assertEqual(VendaItem.query.filter_by(venda_id=sale.id).count(), 1)
+
     def test_multi_item_error_rolls_back_the_entire_sale(self):
         user_id = self.create_user_with_memberships()
         with self.app.app_context():

@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 import json
 import time
 
-from flask import abort, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import abort, flash, g, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import login_required
 import pandas as pd
 from io import BytesIO
@@ -235,6 +235,10 @@ def gestao_vendas():
 def nova_venda():
     form = VendaForm()
     organization = get_current_organization()
+    show_seller_type = g.organization_settings["show_seller_type"]
+    if not show_seller_type:
+        form.tipo_vendedor.validators = []
+        form.tipo_vendedor.data = "Membro"
 
     # carregar produtos
     produtos = Produto.query.filter_by(organization_id=organization.id, ativo=True).all()
@@ -287,7 +291,7 @@ def nova_venda():
                 vendedor_id=vendedor_id,
                 comprador_nome=form.comprador_nome.data.strip(),
                 quantidade=sum(item["quantidade"] for item in items),
-                tipo_vendedor=form.tipo_vendedor.data,
+                tipo_vendedor=form.tipo_vendedor.data if show_seller_type else "Membro",
                 status_pagamento=form.status_pagamento.data,
                 valor_total=float(total),
                 observacao=form.observacao.data.strip() if form.observacao.data else None,
@@ -517,6 +521,10 @@ def api_deletar_venda(id):
 def editar_venda(venda_id):
     form = VendaForm()
     organization = get_current_organization()
+    show_seller_type = g.organization_settings["show_seller_type"]
+    if not show_seller_type:
+        form.tipo_vendedor.validators = []
+        form.tipo_vendedor.data = "Membro"
 
     venda = Venda.query.filter_by(
         id=venda_id, organization_id=organization.id
@@ -599,7 +607,7 @@ def editar_venda(venda_id):
             venda.vendedor_id = vendedor_id
             venda.comprador_nome = form.comprador_nome.data.strip()
             venda.quantidade = sum(item["quantidade"] for item in items)
-            venda.tipo_vendedor = form.tipo_vendedor.data
+            venda.tipo_vendedor = form.tipo_vendedor.data if show_seller_type else "Membro"
             venda.status_pagamento = form.status_pagamento.data
             venda.valor_total = float(total)
             venda.observacao = form.observacao.data.strip() if form.observacao.data else None
