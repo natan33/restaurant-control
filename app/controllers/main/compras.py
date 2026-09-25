@@ -7,6 +7,7 @@ from flask_login import current_user, login_required
 
 from app import db
 from app.core.tenancy import get_current_organization
+from app.core.financeiro import normalize_material_name
 from app.models.pages.financeiro import (
     COMPRA_CATEGORIAS,
     COMPRA_STATUS,
@@ -140,6 +141,83 @@ def _filters(query, organization_id):
     if request.args.get("status"):
         query = query.filter(Compra.status == request.args["status"].strip().lower())
     return query
+
+
+def _history(organization_id):
+    query = (
+        db.session.query(CompraItem, Compra)
+        .join(Compra, Compra.id == CompraItem.compra_id)
+        .filter(
+            Compra.organization_id == organization_id,
+            CompraItem.organization_id == organization_id,
+            Compra.status != "cancelado",
+        )
+    )
+    start = request.args.get("data_inicial")
+    end = request.args.get("data_final")
+    if start:
+        query = query.filter(Compra.data_compra >= _date(start))
+    if end:
+        query = query.filter(Compra.data_compra < _date(end))
+    if request.args.get("fornecedor"):
+        query = query.filter(Compra.fornecedor.ilike(f"%{request.args['fornecedor'].strip()}%"))
+    if request.args.get("unidade"):
+        query = query.filter(CompraItem.unidade == request.args["unidade"].strip().lower())
+
+    material = request.args.get("material")
+    rows = query.order_by(Compra.data_compra.asc(), CompraItem.id.asc()).all()
+    if material:
+        key = normalize_material_name(material)
+        rows = [(item, purchase) for item, purchase in rows if normalize_material_name(item.nome) == key]
+
+    groups = {}
+    for item, purchase in rows:
+        key = (normalize_material_name(item.nome), item.unidade)
+        groups.setdefault(key, []).append((item, purchase))
+    result = []
+    for (name_key, unit), entries in groups.items():
+        prices = [Decimal(str(item.preco_unitario)) for item, _ in entries]
+        latest_item, latest_purchase = entries[-1]
+        previous_item = entries[-2][0] if len(entries) > 1 else None
+        latest_price = prices[-1]
+        previous_price = Decimal(str(previous_item.preco_unitario)) if previous_item else None
+        variation = None
+        if previous_price and previous_price != 0:
+            variation = ((latest_price - previous_price) / previous_price * 100).quantize(Decimal("0.01"))
+        result.append({
+            "material": latest_item.nome,
+            "material_key": name_key,
+            "unidade": unit,
+            "registros": [{
+                "data_compra": purchase.data_compra.isoformat(),
+                "quantidade": str(item.quantidade),
+                "unidade": item.unidade,
+                "preco_unitario": str(item.preco_unitario),
+                "fornecedor": purchase.fornecedor,
+            } for item, purchase in reversed(entries)],
+            "ultimo_preco": str(latest_price),
+            "menor_preco": str(min(prices)),
+            "maior_preco": str(max(prices)),
+            "preco_medio": str((sum(prices, Decimal("0")) / len(prices)).quantize(Decimal("0.01"))),
+            "preco_anterior": str(previous_price) if previous_price is not None else None,
+            "variacao_percentual": str(variation) if variation is not None else None,
+            "data_ultimo": latest_purchase.data_compra.isoformat(),
+        })
+    return sorted(result, key=lambda item: normalize_material_name(item["material"]))
+
+
+@main.route("/despesas/historico", methods=["GET"])
+@login_required
+def historico_despesas():
+    _expenses_enabled()
+    organization = get_current_organization()
+    history = _history(organization.id)
+    if _wants_json():
+        return jsonify(history)
+    return render_template(
+        "base/historico_precos.html", historico=history,
+        unidades=COMPRA_UNIDADES,
+    )
 
 
 @main.route("/despesas", methods=["GET"])

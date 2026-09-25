@@ -49,7 +49,7 @@
         }
     </style>
 
-    <title>Xinxim de Bofe - Portal</title>
+    <title>{{ g.organization_settings.app_display_name|default(g.current_organization.name) }} - Portal</title>
 
 </head>
 
@@ -64,7 +64,7 @@
 
             <h1
                 class="text-accent-blue dark:text-primary text-lg font-extrabold leading-tight tracking-tight flex-1 text-center">
-                Social Quentinhas
+                {{ g.organization_settings.app_display_name|default(g.current_organization.name) }}
             </h1>
 
             <!-- <div class="flex w-10 items-center justify-end">

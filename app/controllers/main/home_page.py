@@ -1,16 +1,61 @@
 from io import BytesIO
 import time
 
-from flask import Blueprint, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, g, jsonify, redirect, render_template, request, send_file, url_for
 from flask_login import login_required
 import pandas as pd
-from app.models import Venda, VendaPagamento, Vendedor
-from sqlalchemy import func, case
+from app.models import Compra, CompraItem, Venda, VendaItem, VendaPagamento, Vendedor
+from sqlalchemy import and_, func, case
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from app import db
 from app.models.pages.gerenciamento_vendas import Produto
 from . import main
 from app.core.tenancy import get_current_organization
+
+
+def _period_bounds():
+    end = request.args.get("data_final")
+    start = request.args.get("data_inicial")
+    now = datetime.now(timezone.utc)
+    if not start or not end:
+        start = (now - timedelta(days=6)).date().isoformat()
+        end = now.date().isoformat()
+    start_date = datetime.fromisoformat(start).replace(tzinfo=timezone.utc)
+    end_date = datetime.fromisoformat(end).replace(tzinfo=timezone.utc) + timedelta(days=1)
+    return start_date, end_date
+
+
+def _restaurant_dashboard(organization):
+    start, end = _period_bounds()
+    sales_filter = (Venda.organization_id == organization.id, Venda.data_venda >= start, Venda.data_venda < end)
+    payment_filter = (VendaPagamento.organization_id == organization.id, VendaPagamento.status == "confirmado")
+    sales = db.session.query(Venda.id, Venda.valor_total).filter(*sales_filter).subquery()
+    received = db.session.query(func.coalesce(func.sum(VendaPagamento.valor), 0)).join(sales, sales.c.id == VendaPagamento.venda_id).filter(*payment_filter).scalar() or 0
+    billing = db.session.query(func.coalesce(func.sum(sales.c.valor_total), 0)).scalar() or 0
+    sale_count = db.session.query(func.count(sales.c.id)).scalar() or 0
+    paid_by_sale = db.session.query(VendaPagamento.venda_id, func.sum(VendaPagamento.valor).label("paid")).join(sales, sales.c.id == VendaPagamento.venda_id).filter(*payment_filter).group_by(VendaPagamento.venda_id).subquery()
+    statuses = db.session.query(
+        func.sum(case((func.coalesce(paid_by_sale.c.paid, 0) >= sales.c.valor_total, 1), else_=0)),
+        func.sum(case((and_(func.coalesce(paid_by_sale.c.paid, 0) > 0, func.coalesce(paid_by_sale.c.paid, 0) < sales.c.valor_total), 1), else_=0)),
+        func.sum(case((func.coalesce(paid_by_sale.c.paid, 0) == 0, 1), else_=0)),
+    ).select_from(sales).outerjoin(paid_by_sale, paid_by_sale.c.venda_id == sales.c.id).one()
+    expenses = db.session.query(func.coalesce(func.sum(Compra.valor_total), 0)).filter(Compra.organization_id == organization.id, Compra.status == "pago", Compra.data_compra >= start, Compra.data_compra < end).scalar() or 0
+    daily_sales = db.session.query(func.date(Venda.data_venda), func.sum(Venda.valor_total)).filter(*sales_filter).group_by(func.date(Venda.data_venda)).order_by(func.date(Venda.data_venda)).all()
+    daily_expenses = db.session.query(func.date(Compra.data_compra), func.sum(Compra.valor_total)).filter(Compra.organization_id == organization.id, Compra.status == "pago", Compra.data_compra >= start, Compra.data_compra < end).group_by(func.date(Compra.data_compra)).order_by(func.date(Compra.data_compra)).all()
+    products = db.session.query(Produto.nome, func.sum(VendaItem.quantidade)).join(VendaItem, VendaItem.produto_id == Produto.id).join(Venda, Venda.id == VendaItem.venda_id).filter(*sales_filter, VendaItem.organization_id == organization.id, Produto.organization_id == organization.id).group_by(Produto.nome).order_by(func.sum(VendaItem.quantidade).desc()).limit(5).all()
+    categories = db.session.query(Compra.categoria, func.sum(Compra.valor_total)).filter(Compra.organization_id == organization.id, Compra.status == "pago", Compra.data_compra >= start, Compra.data_compra < end).group_by(Compra.categoria).order_by(func.sum(Compra.valor_total).desc()).all()
+    payment_methods = db.session.query(VendaPagamento.forma_pagamento, func.sum(VendaPagamento.valor)).join(sales, sales.c.id == VendaPagamento.venda_id).filter(*payment_filter).group_by(VendaPagamento.forma_pagamento).order_by(func.sum(VendaPagamento.valor).desc()).first()
+    last_sales = Venda.query.filter(*sales_filter).order_by(Venda.data_venda.desc()).limit(5).all()
+    last_expenses = Compra.query.filter(Compra.organization_id == organization.id, Compra.data_compra >= start, Compra.data_compra < end).order_by(Compra.data_compra.desc()).limit(5).all()
+    billing = Decimal(str(billing)); received = Decimal(str(received)); expenses = Decimal(str(expenses))
+    return {
+        "period": {"start": start.date().isoformat(), "end": (end - timedelta(days=1)).date().isoformat()},
+        "cards": {"billing": str(billing), "received": str(received), "receivable": str(max(billing - received, Decimal("0"))), "expenses": str(expenses), "result": str(received - expenses), "sales_count": sale_count, "ticket_average": str((billing / sale_count).quantize(Decimal("0.01")) if sale_count else Decimal("0")), "paid_sales": int(statuses[0] or 0), "partial_sales": int(statuses[1] or 0), "pending_sales": int(statuses[2] or 0)},
+        "daily": {"sales": [[str(day), float(value or 0)] for day, value in daily_sales], "expenses": [[str(day), float(value or 0)] for day, value in daily_expenses]},
+        "products": [[name, int(value or 0)] for name, value in products], "categories": [[name, float(value or 0)] for name, value in categories], "payment_method": {"name": payment_methods[0], "value": float(payment_methods[1])} if payment_methods else None,
+        "last_sales": [{"date": sale.data_venda.isoformat(), "value": float(sale.valor_total)} for sale in last_sales], "last_expenses": [{"date": expense.data_compra.isoformat(), "value": float(expense.valor_total), "category": expense.categoria} for expense in last_expenses],
+    }
 
 
 def _payment_totals(vendas, organization):
@@ -41,6 +86,8 @@ def _financial_status(total, paid):
 @login_required
 def index():
     organization = get_current_organization()
+    if g.organization_settings.get("dashboard_mode") == "restaurant" and g.organization_settings.get("show_financial_dashboard"):
+        return render_template("base/dashboard_restaurante.html", app_display_name=g.organization_settings.get("app_display_name", organization.name))
     # Últimos 7 dias
     hoje = datetime.now(timezone.utc)
     dias = [hoje - timedelta(days=i) for i in range(6, -1, -1)]
@@ -156,6 +203,15 @@ def index():
         percentual_pendente=percentual_pendente,
         ranking=ranking
     )
+
+
+@main.route("/api/dashboard-financeiro")
+@login_required
+def api_dashboard_financeiro():
+    organization = get_current_organization()
+    if g.organization_settings.get("dashboard_mode") != "restaurant" or not g.organization_settings.get("show_financial_dashboard"):
+        return jsonify({"error": "Dashboard financeiro indisponível"}), 403
+    return jsonify(_restaurant_dashboard(organization))
 
 
 @main.route("/api/vendas-semanais")

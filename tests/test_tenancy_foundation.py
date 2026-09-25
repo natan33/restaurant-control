@@ -2,6 +2,7 @@ import unittest
 import importlib.util
 import json
 from decimal import Decimal
+from datetime import datetime
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -1025,6 +1026,74 @@ class TenancyFoundationTestCase(unittest.TestCase):
             with client.session_transaction() as browser_session:
                 browser_session["organization_id"] = disabled_id
             self.assertEqual(client.get("/despesas").status_code, 403)
+
+    def test_price_history_normalizes_names_keeps_units_and_excludes_cancelled(self):
+        user_id = self.create_user_with_memberships(membership_count=2)
+        with self.app.app_context():
+            organizations = Organization.query.order_by(Organization.id).all()
+            organizations[0].settings = {"show_expenses": True}
+            organizations[1].settings = {"show_expenses": True}
+            db.session.commit()
+            current_id = organizations[0].id
+            for name, unit, price, date, status in (
+                ("Quiabo", "kg", "5.00", "2026-09-10T00:00:00+00:00", "pago"),
+                (" QUIABO ", "kg", "8.90", "2026-09-17T00:00:00+00:00", "pago"),
+                ("quiabo", "kg", "14.99", "2026-09-24T00:00:00+00:00", "pago"),
+                ("Quiabo", "unidade", "3.50", "2026-09-24T00:00:00+00:00", "pago"),
+                ("QUIABO", "kg", "99.00", "2026-09-25T00:00:00+00:00", "cancelado"),
+            ):
+                purchase = Compra(organization_id=current_id, data_compra=datetime.fromisoformat(date), categoria="ingredientes", status=status)
+                purchase.items = [CompraItem(organization_id=current_id, nome=name, quantidade=1, unidade=unit, preco_unitario=price)]
+                db.session.add(purchase)
+            foreign = Compra(organization_id=organizations[1].id, categoria="ingredientes")
+            foreign.items = [CompraItem(organization_id=organizations[1].id, nome="Quiabo", quantidade=1, unidade="kg", preco_unitario=1)]
+            db.session.add(foreign)
+            db.session.commit()
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = current_id
+            response = client.get("/despesas/historico?material=quiabo&unidade=kg", headers={"Accept": "application/json"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json), 1)
+        result = response.json[0]
+        self.assertEqual(result["ultimo_preco"], "14.990000")
+        self.assertEqual(result["menor_preco"], "5.000000")
+        self.assertEqual(result["maior_preco"], "14.990000")
+        self.assertEqual(result["preco_medio"], "9.63")
+        self.assertEqual(result["variacao_percentual"], "68.43")
+        self.assertEqual(len(result["registros"]), 3)
+
+    def test_restaurant_dashboard_aggregates_sales_payments_and_paid_expenses(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization = Organization.query.one()
+            organization.settings = {"dashboard_mode": "restaurant", "show_financial_dashboard": True, "app_display_name": "Graças na Mesa"}
+            OrganizationUser.query.one().role = "admin"
+            product = Produto(organization_id=organization.id, nome="Prato", preco=20)
+            seller = Vendedor(organization_id=organization.id, nome="Vendedor")
+            db.session.add_all([product, seller])
+            db.session.flush()
+            sale = Venda(organization_id=organization.id, produto_id=product.id, vendedor_id=seller.id, comprador_nome="Cliente", quantidade=2, tipo_vendedor="Membro", status_pagamento="Pendente", valor_total=40)
+            sale.items = [VendaItem(organization_id=organization.id, produto_id=product.id, quantidade=2, preco_unitario=20, subtotal=40)]
+            sale.pagamentos = [VendaPagamento(organization_id=organization.id, forma_pagamento="pix", valor=20, status="confirmado")]
+            expense = Compra(organization_id=organization.id, categoria="ingredientes", status="pago")
+            expense.items = [CompraItem(organization_id=organization.id, nome="Quiabo", quantidade=1, unidade="kg", preco_unitario=7)]
+            db.session.add_all([sale, expense])
+            db.session.commit()
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+            response = client.get("/api/dashboard-financeiro?data_inicial=2026-01-01&data_final=2026-12-31")
+            home = client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["cards"]["billing"], "40.0")
+        self.assertEqual(response.json["cards"]["received"], "20.000000")
+        self.assertEqual(response.json["cards"]["receivable"], "20.000000")
+        self.assertEqual(response.json["cards"]["expenses"], "7.000000")
+        self.assertEqual(response.json["cards"]["result"], "13.000000")
+        self.assertEqual(home.status_code, 200)
+        self.assertIn("Graças na Mesa".encode(), home.data)
 
 if __name__ == "__main__":
     unittest.main()
