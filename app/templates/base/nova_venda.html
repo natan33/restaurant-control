@@ -162,7 +162,7 @@
                         </div>
                     </section>
                     <!-- Seller Type (Segmented Control style) -->
-                    <section class="space-y-3">
+                    {% if g.organization_settings.show_seller_type %}<section class="space-y-3">
                         <label class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Tipo de
                             Vendedor</label>
                         <div class="grid grid-cols-3 gap-2 bg-slate-200/50 dark:bg-slate-800 p-1 rounded-xl">
@@ -181,7 +181,7 @@
 
                             {% endfor %}
                         </div>
-                    </section>
+                    </section>{% endif %}
                     <!-- Payment Status -->
                     <section class="space-y-3">
                         <label class="block text-sm font-semibold text-secondary/80 dark:text-slate-300 ml-1">Pagamento</label>

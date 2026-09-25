@@ -21,6 +21,13 @@
                 <p class="text-[10px] font-bold uppercase tracking-tighter">Produtos</p>
             </a>
 
+            {% if (g.organization_settings|default({})).get('show_expenses', false) %}
+            <a class="flex flex-col items-center gap-1 transition-colors {{ 'text-primary' if request.endpoint in ['main.despesas', 'main.nova_despesa', 'main.detalhe_despesa', 'main.editar_despesa', 'main.cancelar_despesa'] else 'text-slate-400 dark:text-slate-500 hover:text-primary' }}" href="{{ url_for('main.despesas') }}">
+                <span class="material-symbols-outlined">receipt_long</span>
+                <p class="text-[10px] font-bold uppercase tracking-tighter">Despesas</p>
+            </a>
+            {% endif %}
+
             <a class="flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500 hover:text-primary transition-colors"
                 href="{{ url_for('main.relatorios') }}">
                 <span class="material-symbols-outlined">bar_chart</span>

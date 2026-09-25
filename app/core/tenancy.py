@@ -52,6 +52,8 @@ def resolve_current_organization():
 
     g.current_organization = membership.organization
     g.current_organization_membership = membership
+    from app.core.organization_settings import get_organization_settings
+    g.organization_settings = get_organization_settings(membership.organization)
     return membership.organization
 
 
@@ -73,6 +75,8 @@ def select_current_organization(organization_id):
     session["organization_id"] = membership.organization_id
     g.current_organization = membership.organization
     g.current_organization_membership = membership
+    from app.core.organization_settings import get_organization_settings
+    g.organization_settings = get_organization_settings(membership.organization)
     return membership.organization
 
 

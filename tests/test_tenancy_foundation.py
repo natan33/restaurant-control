@@ -1,6 +1,7 @@
 import unittest
 import importlib.util
 import json
+from decimal import Decimal
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from app import db
 from app.core.tenancy import register_tenancy_context
 from app.models.auth.user import User
 from app.models.pages.gerenciamento_vendas import Produto, Venda, VendaItem, VendaPagamento, Vendedor
+from app.models.pages.financeiro import Compra, CompraItem
 from app.models.tenancy import Organization, OrganizationUser
 
 
@@ -26,6 +28,7 @@ class TenancyFoundationTestCase(unittest.TestCase):
             SQLALCHEMY_TRACK_MODIFICATIONS=False,
         )
         db.init_app(self.app)
+        self.app.jinja_loader = FileSystemLoader("app/templates")
         self.login_manager = LoginManager(self.app)
         self.user_counter = 0
 
@@ -667,6 +670,66 @@ class TenancyFoundationTestCase(unittest.TestCase):
             self.assertEqual(sale.tipo_vendedor, "Membro")
             self.assertEqual(VendaItem.query.filter_by(venda_id=sale.id).count(), 1)
 
+    def test_purchase_calculates_decimal_totals_for_multiple_items(self):
+        with self.app.app_context():
+            organization = Organization(name="Graças na Mesa")
+            db.session.add(organization)
+            db.session.flush()
+            purchase = Compra(organization_id=organization.id, categoria="ingredientes")
+            purchase.items = [
+                CompraItem(organization_id=organization.id, nome="Quiabo", quantidade="3", unidade="kg", preco_unitario="14.99"),
+                CompraItem(organization_id=organization.id, nome="Dendê", quantidade="2", unidade="litro", preco_unitario="9.50"),
+            ]
+            db.session.add(purchase)
+            db.session.commit()
+
+            self.assertEqual(purchase.valor_total, Decimal("63.970000"))
+            self.assertEqual(purchase.items[0].subtotal, Decimal("44.970000"))
+            self.assertIsInstance(purchase.valor_total, Decimal)
+
+    def test_purchase_rejects_invalid_values_and_cross_tenant_items(self):
+        with self.app.app_context():
+            first = Organization(name="First")
+            second = Organization(name="Second")
+            db.session.add_all([first, second])
+            db.session.flush()
+
+            purchase = Compra(organization_id=first.id, categoria="ingredientes")
+            purchase.items = [CompraItem(organization_id=second.id, nome="Quiabo", quantidade=1, unidade="kg", preco_unitario=1)]
+            db.session.add(purchase)
+            with self.assertRaises(ValueError):
+                db.session.commit()
+            db.session.rollback()
+
+            invalid = Compra(organization_id=first.id, categoria="ingredientes")
+            invalid.items = [CompraItem(organization_id=first.id, nome="Quiabo", quantidade=0, unidade="kg", preco_unitario=1)]
+            db.session.add(invalid)
+            with self.assertRaises(ValueError):
+                db.session.commit()
+            db.session.rollback()
+
+            invalid_price = Compra(organization_id=first.id, categoria="ingredientes")
+            invalid_price.items = [CompraItem(organization_id=first.id, nome="Quiabo", quantidade=1, unidade="kg", preco_unitario=0)]
+            db.session.add(invalid_price)
+            with self.assertRaises(ValueError):
+                db.session.commit()
+            db.session.rollback()
+
+    def test_expense_settings_backfill_preserves_existing_keys(self):
+        spec = importlib.util.spec_from_file_location(
+            "expense_migration",
+            "migrations/versions/h8c9d0e1f2a3_cria_compras_despesas.py",
+        )
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+        settings = migration._merge_expense_settings(
+            {"show_seller_type": False, "theme_key": "custom"}, True
+        )
+        self.assertEqual(settings["show_seller_type"], False)
+        self.assertEqual(settings["theme_key"], "custom")
+        self.assertTrue(settings["show_expenses"])
+        self.assertTrue(settings["show_financial_dashboard"])
+
     def test_multi_item_error_rolls_back_the_entire_sale(self):
         user_id = self.create_user_with_memberships()
         with self.app.app_context():
@@ -875,6 +938,93 @@ class TenancyFoundationTestCase(unittest.TestCase):
         self.assertIn(b"Cliente 1", shared_strings)
         self.assertNotIn(b"Cliente 2", shared_strings)
 
+    def test_admin_crud_expenses_is_tenant_scoped_and_atomic(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization = Organization.query.one()
+            organization.settings = {"show_expenses": True}
+            OrganizationUser.query.one().role = "admin"
+            db.session.commit()
+            organization_id = organization.id
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+            response = client.post("/despesas/nova", json={"categoria": "ingredientes", "status": "pago", "fornecedor": "Fornecedor A", "organization_id": 999, "items": [{"nome": "Quiabo", "quantidade": "3", "unidade": "kg", "preco_unitario": "14.99"}, {"nome": "Dendê", "quantidade": "2", "unidade": "litro", "preco_unitario": "9.50"}]})
+            self.assertEqual(response.status_code, 201)
+            purchase_id = response.json["id"]
+            self.assertEqual(response.json["valor_total"], "63.970000")
+            invalid = client.post("/despesas/nova", json={"categoria": "ingredientes", "items": [{"nome": "Erro", "quantidade": "0", "unidade": "kg", "preco_unitario": "1"}]})
+            self.assertEqual(invalid.status_code, 400)
+            self.assertEqual(Compra.query.count(), 1)
+            self.assertEqual(client.get(f"/despesas/{purchase_id}").status_code, 200)
+            cancelled = client.post(f"/despesas/{purchase_id}/cancelar")
+            self.assertEqual(cancelled.status_code, 200)
+            self.assertEqual(cancelled.json["status"], "cancelado")
+            self.assertEqual(client.get("/despesas?status=cancelado", headers={"Accept": "application/json"}).json[0]["id"], purchase_id)
+            self.assertEqual(Compra.query.one().organization_id, organization_id)
+
+    def test_expense_member_and_cross_tenant_access_are_blocked(self):
+        user_id = self.create_user_with_memberships(membership_count=2)
+        with self.app.app_context():
+            organizations = Organization.query.order_by(Organization.id).all()
+            for organization in organizations:
+                organization.settings = {"show_expenses": True}
+            db.session.commit()
+            foreign = Compra(organization_id=organizations[1].id, categoria="outros")
+            foreign.items = [CompraItem(organization_id=organizations[1].id, nome="Material", quantidade=1, unidade="unidade", preco_unitario=1)]
+            db.session.add(foreign)
+            db.session.commit()
+            foreign_id = foreign.id
+            current_organization_id = organizations[0].id
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = current_organization_id
+            self.assertEqual(client.post("/despesas/nova", json={"categoria": "outros", "items": []}).status_code, 403)
+            self.assertEqual(client.get(f"/despesas/{foreign_id}").status_code, 404)
+
+    def test_expense_filters_and_disabled_setting(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization = Organization.query.one()
+            OrganizationUser.query.one().role = "admin"
+            organization.settings = {"show_expenses": True}
+            db.session.commit()
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+            for supplier, category, status, date in (("A", "ingredientes", "pago", "2026-09-01T00:00:00+00:00"), ("B", "limpeza", "pendente", "2026-08-01T00:00:00+00:00")):
+                response = client.post("/despesas/nova", json={"fornecedor": supplier, "categoria": category, "status": status, "data_compra": date, "items": [{"nome": "X", "quantidade": 1, "unidade": "unidade", "preco_unitario": 1}]})
+                self.assertEqual(response.status_code, 201)
+            headers = {"Accept": "application/json"}
+            self.assertEqual(len(client.get("/despesas?categoria=ingredientes", headers=headers).json), 1)
+            self.assertEqual(len(client.get("/despesas?fornecedor=A", headers=headers).json), 1)
+            self.assertEqual(len(client.get("/despesas?status=pendente", headers=headers).json), 1)
+            self.assertEqual(len(client.get("/despesas?data_inicial=2026-09-01&data_final=2026-09-30", headers=headers).json), 1)
+            organization = Organization.query.one()
+            organization.settings = {"show_expenses": False}
+            db.session.commit()
+            self.assertEqual(client.get("/despesas").status_code, 403)
+
+    def test_expense_ui_respects_tenant_setting_and_role(self):
+        user_id = self.create_user_with_memberships(membership_count=2)
+        with self.app.app_context():
+            organizations = Organization.query.order_by(Organization.id).all()
+            organizations[0].settings = {"show_expenses": True}
+            organizations[1].settings = {"show_expenses": False}
+            db.session.commit()
+            enabled_id, disabled_id = organizations[0].id, organizations[1].id
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = enabled_id
+            enabled = client.get("/despesas")
+            self.assertEqual(enabled.status_code, 200)
+            self.assertIn(b"Despesas", enabled.data)
+            self.assertNotIn(b"+ Nova despesa", enabled.data)
+            with client.session_transaction() as browser_session:
+                browser_session["organization_id"] = disabled_id
+            self.assertEqual(client.get("/despesas").status_code, 403)
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,17 +1,7 @@
-<!DOCTYPE html>
-<html lang="pt-br">
-
-<head>
-
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+{% extends 'base/layout.html' %}
+{% block head %}
 
     <title>Relatórios</title>
-
-    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
-
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -41,10 +31,6 @@
     </script>
 
     <style>
-        body {
-            font-family: 'Manrope', sans-serif;
-        }
-
         @media print {
 
             nav,
@@ -60,10 +46,8 @@
 
         }
     </style>
-
-</head>
-
-<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 min-h-screen pb-24">
+{% endblock %}
+{% block content %}
 
     <!-- HEADER -->
 
@@ -239,11 +223,7 @@
     </main>
 
 
-    {% include 'base/navbar.html' %}
-
+{% endblock %}
+{% block scripts %}
     <script src="{{ url_for('static', filename='js/base/dashboard.js') }}"></script>
-
-
-</body>
-
-</html>
+{% endblock %}
