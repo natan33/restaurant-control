@@ -290,6 +290,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // TOGGLE PAGAMENTO
         if (e.target.closest(".pagamento")) {
+            const paymentButton = e.target.closest(".pagamento");
+            if (paymentButton.disabled) return;
             const statusSpan = card.querySelector("span.pagamento-status");
             // Extrai apenas o valor após "Pago: " ou verifica o texto
             const statusAtual = statusSpan.textContent.includes("Pago") && !statusSpan.textContent.includes("Pendente") ? "Pago" : "Pendente";
@@ -309,6 +311,10 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             if (!result.isConfirmed) return;
+
+            paymentButton.disabled = true;
+            paymentButton.setAttribute("aria-busy", "true");
+            paymentButton.classList.add("opacity-60", "pointer-events-none");
 
             Swal.fire({
                 title: "Atualizando pagamento...",
@@ -353,6 +359,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     throw new Error();
                 }
             } catch (err) {
+                paymentButton.disabled = false;
+                paymentButton.removeAttribute("aria-busy");
+                paymentButton.classList.remove("opacity-60", "pointer-events-none");
                 Swal.fire({
                     icon: "error",
                     title: "Erro",

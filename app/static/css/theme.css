@@ -1,0 +1,64 @@
+:root {
+    --color-primary: #f6a50e;
+    --color-primary-hover: #d98d00;
+    --color-on-primary: #2c3e50;
+    --color-secondary: #2c3e50;
+    --color-accent: #f6a50e;
+    --color-background: #f8f7f5;
+    --color-surface: #ffffff;
+    --color-text: #2c3e50;
+    --color-text-muted: #64748b;
+    --color-border: #e2e8f0;
+    --color-success: #15803d;
+    --color-warning: #b45309;
+    --color-danger: #b91c1c;
+    --radius-card: 0.75rem;
+}
+
+[data-theme="gracas-na-mesa"] {
+    --color-primary: #b52a24;
+    --color-primary-hover: #8f201c;
+    --color-on-primary: #ffffff;
+    --color-secondary: #6b1f1b;
+    --color-accent: #e7a33e;
+    --color-background: #fbf6ef;
+    --color-surface: #fffdf9;
+    --color-text: #3b2420;
+    --color-text-muted: #795f58;
+    --color-border: #ead8ca;
+    --color-success: #2f7d4a;
+    --color-warning: #b86b17;
+    --color-danger: #a32626;
+}
+
+body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+}
+
+.theme-brand-mark {
+    color: var(--color-secondary);
+}
+
+.theme-brand-mark img {
+    max-height: 2rem;
+    width: auto;
+}
+
+/* Keep existing Tailwind markup on the shared pages tied to the theme tokens. */
+.bg-primary { background-color: var(--color-primary) !important; color: var(--color-on-primary) !important; }
+.bg-secondary { background-color: var(--color-secondary) !important; }
+.text-primary { color: var(--color-primary) !important; }
+.text-secondary { color: var(--color-secondary) !important; }
+.border-primary, .border-primary\/10 { border-color: color-mix(in srgb, var(--color-primary) 10%, transparent) !important; }
+.border-secondary { border-color: var(--color-secondary) !important; }
+.bg-white { background-color: var(--color-surface) !important; }
+.bg-background-light { background-color: var(--color-background) !important; }
+.text-slate-500, .text-slate-400 { color: var(--color-text-muted) !important; }
+.border-slate-200, .border-slate-300 { border-color: var(--color-border) !important; }
+.hover\\:bg-primary\\/90:hover { background-color: var(--color-primary-hover) !important; }
+
+
+@media (max-width: 639px) {
+    .theme-brand-mark img { max-height: 1.75rem; }
+}

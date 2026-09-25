@@ -2,6 +2,10 @@
             lg:top-0 lg:bottom-auto lg:border-t-0 lg:border-b lg:pb-2">
 
         <div class="flex justify-between items-center max-w-md mx-auto lg:max-w-5xl">
+            <div class="theme-brand-mark hidden items-center gap-2 pr-2 lg:flex">
+                {% if (g.organization_settings|default({})).get('logo_url') %}<img src="{{ g.organization_settings.logo_url }}" alt="{{ g.organization_settings.get('app_display_name', g.current_organization.name) }}">{% endif %}
+                <span class="max-w-32 truncate text-xs font-extrabold">{{ g.organization_settings.get('app_display_name', g.current_organization.name) }}</span>
+            </div>
 
             <a class="flex flex-col items-center gap-1 transition-colors {{ 'text-primary' if request.endpoint == 'main.index' or request.endpoint == 'main.painel_vendas' else 'text-slate-400 dark:text-slate-500 hover:text-primary' }}"
                 href="{{ url_for('main.index') }}">

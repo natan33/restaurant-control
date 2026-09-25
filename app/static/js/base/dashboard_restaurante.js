@@ -1,8 +1,82 @@
 document.addEventListener("DOMContentLoaded", () => {
-    const period = document.getElementById("periodo"); const custom = document.getElementById("custom-periodo"); const error = document.getElementById("dashboard-erro"); let charts = [];
-    const money = value => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-    const dates = () => { const now = new Date(); let start = new Date(now); let end = new Date(now); if (period.value === "today") start = new Date(now); else if (period.value === "7") start.setDate(now.getDate() - 6); else if (period.value === "month") start = new Date(now.getFullYear(), now.getMonth(), 1); else if (period.value === "previous") { start = new Date(now.getFullYear(), now.getMonth() - 1, 1); end = new Date(now.getFullYear(), now.getMonth(), 0); } else if (period.value === "year") start = new Date(now.getFullYear(), 0, 1); else if (period.value === "custom") { return { start: document.getElementById("inicio").value, end: document.getElementById("fim").value }; } return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) }; };
-    const draw = (id, config) => { const old = charts.find(chart => chart.canvas.id === id); if (old) old.destroy(); const chart = new Chart(document.getElementById(id), config); charts.push(chart); };
-    const load = async () => { try { const range = dates(); const response = await fetch(`/api/dashboard-financeiro?data_inicial=${range.start}&data_final=${range.end}`); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Não foi possível carregar o dashboard."); error.classList.add("hidden"); const c = data.cards; document.getElementById("cards").innerHTML = [["Faturamento", c.billing], ["Recebido", c.received], ["A receber", c.receivable], ["Despesas", c.expenses], ["Resultado", c.result]].map(([label, value]) => `<div class="rounded-xl bg-white p-4 shadow-sm"><p class="text-xs font-bold uppercase text-slate-500">${label}</p><p class="mt-2 text-xl font-extrabold ${label === "Resultado" && Number(value) < 0 ? "text-red-600" : "text-secondary"}">${money(value)}</p></div>`).join(""); document.getElementById("secundarios").innerHTML = `<div>Vendas<strong class="block text-lg">${c.sales_count}</strong></div><div>Ticket médio<strong class="block text-lg">${money(c.ticket_average)}</strong></div><div>Pagas<strong class="block text-lg">${c.paid_sales}</strong></div><div>Parciais<strong class="block text-lg">${c.partial_sales}</strong></div><div>Pendentes<strong class="block text-lg">${c.pending_sales}</strong></div><div>Forma mais usada<strong class="block text-lg">${data.payment_method?.name || "—"}</strong></div>`; const labels = [...new Set([...data.daily.sales, ...data.daily.expenses].map(row => row[0]))].sort(); const values = (rows, label) => labels.map(day => (rows.find(row => row[0] === day) || [day, 0])[1]); draw("fluxo", { type: "bar", data: { labels, datasets: [{ label: "Entradas", data: values(data.daily.sales), backgroundColor: "#16a34a" }, { label: "Saídas", data: values(data.daily.expenses), backgroundColor: "#ef4444" }] }, options: { responsive: true, maintainAspectRatio: false } }); draw("vendas-dia", { type: "line", data: { labels, datasets: [{ label: "Vendas", data: values(data.daily.sales), borderColor: "#f6a50e", tension: .3 }] }, options: { responsive: true, maintainAspectRatio: false } }); draw("produtos", { type: "bar", data: { labels: data.products.map(row => row[0]), datasets: [{ label: "Quantidade", data: data.products.map(row => row[1]), backgroundColor: "#2c3e50" }] }, options: { responsive: true, maintainAspectRatio: false, indexAxis: "y" } }); draw("categorias", { type: "doughnut", data: { labels: data.categories.map(row => row[0]), datasets: [{ data: data.categories.map(row => row[1]), backgroundColor: ["#f6a50e", "#2c3e50", "#16a34a", "#ef4444", "#8b5cf6"] }] }, options: { responsive: true, maintainAspectRatio: false } }); document.getElementById("movimentacoes").innerHTML = [...data.last_sales.map(item => `<p>Venda · ${new Date(item.date).toLocaleDateString("pt-BR")} <strong class="float-right">${money(item.value)}</strong></p>`), ...data.last_expenses.map(item => `<p>Despesa · ${item.category} <strong class="float-right">${money(item.value)}</strong></p>`)].join("") || "Nenhuma movimentação no período."; } catch (exception) { error.textContent = exception.message; error.classList.remove("hidden"); } };
-    period.addEventListener("change", () => { custom.classList.toggle("hidden", period.value !== "custom"); custom.classList.toggle("grid", period.value === "custom"); load(); }); document.getElementById("inicio").addEventListener("change", load); document.getElementById("fim").addEventListener("change", load); load();
+    const period = document.getElementById("periodo");
+    const custom = document.getElementById("custom-periodo");
+    const error = document.getElementById("dashboard-erro");
+    const charts = new Map();
+
+    if (!period || !custom || !error) return;
+
+    const money = value => Number(value || 0).toLocaleString("pt-BR", {
+        style: "currency", currency: "BRL",
+    });
+
+    const dates = () => {
+        const now = new Date();
+        let start = new Date(now);
+        let end = new Date(now);
+        if (period.value === "7") start.setDate(now.getDate() - 6);
+        if (period.value === "month") start = new Date(now.getFullYear(), now.getMonth(), 1);
+        if (period.value === "previous") {
+            start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            end = new Date(now.getFullYear(), now.getMonth(), 0);
+        }
+        if (period.value === "year") start = new Date(now.getFullYear(), 0, 1);
+        if (period.value === "custom") {
+            return {
+                start: document.getElementById("inicio")?.value || "",
+                end: document.getElementById("fim")?.value || "",
+            };
+        }
+        return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+    };
+
+    const draw = (id, config) => {
+        const canvas = document.getElementById(id);
+        if (!canvas) return;
+        charts.get(id)?.destroy();
+        charts.set(id, new Chart(canvas, config));
+    };
+
+    const load = async () => {
+        try {
+            const range = dates();
+            const response = await fetch(`/api/dashboard-financeiro?data_inicial=${range.start}&data_final=${range.end}`);
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Não foi possível carregar o dashboard.");
+
+            error.classList.add("hidden");
+            const cards = data.cards || {};
+            const daily = data.daily || { sales: [], expenses: [] };
+            const products = data.products || [];
+            const categories = data.categories || [];
+            const sales = daily.sales || [];
+            const expenses = daily.expenses || [];
+            const labels = [...new Set([...sales, ...expenses].map(row => row[0]))].sort();
+            const values = rows => labels.map(day => (rows.find(row => row[0] === day) || [day, 0])[1]);
+
+            document.getElementById("cards").innerHTML = [
+                ["Faturamento", cards.billing], ["Recebido", cards.received],
+                ["A receber", cards.receivable], ["Despesas", cards.expenses], ["Resultado", cards.result],
+            ].map(([label, value]) => `<div class="rounded-xl bg-white p-4 shadow-sm"><p class="text-xs font-bold uppercase text-slate-500">${label}</p><p class="mt-2 text-xl font-extrabold ${label === "Resultado" && Number(value) < 0 ? "text-red-600" : "text-secondary"}">${money(value)}</p></div>`).join("");
+            document.getElementById("secundarios").innerHTML = `<div>Vendas<strong class="block text-lg">${cards.sales_count || 0}</strong></div><div>Ticket médio<strong class="block text-lg">${money(cards.ticket_average)}</strong></div><div>Pagas<strong class="block text-lg">${cards.paid_sales || 0}</strong></div><div>Parciais<strong class="block text-lg">${cards.partial_sales || 0}</strong></div><div>Pendentes<strong class="block text-lg">${cards.pending_sales || 0}</strong></div><div>Forma mais usada<strong class="block text-lg">${data.payment_method?.name || "—"}</strong></div>`;
+
+            draw("fluxo", { type: "bar", data: { labels, datasets: [{ label: "Entradas", data: values(sales), backgroundColor: "#16a34a" }, { label: "Saídas", data: values(expenses), backgroundColor: "#ef4444" }] }, options: { responsive: true, maintainAspectRatio: false } });
+            draw("vendas-dia", { type: "line", data: { labels, datasets: [{ label: "Vendas", data: values(sales), borderColor: "#f6a50e", tension: .3 }] }, options: { responsive: true, maintainAspectRatio: false } });
+            draw("produtos", { type: "bar", data: { labels: products.map(row => row[0]), datasets: [{ label: "Quantidade", data: products.map(row => row[1]), backgroundColor: "#2c3e50" }] }, options: { responsive: true, maintainAspectRatio: false, indexAxis: "y" } });
+            draw("categorias", { type: "doughnut", data: { labels: categories.map(row => row[0]), datasets: [{ data: categories.map(row => row[1]), backgroundColor: ["#f6a50e", "#2c3e50", "#16a34a", "#ef4444", "#8b5cf6"] }] }, options: { responsive: true, maintainAspectRatio: false } });
+            document.getElementById("movimentacoes").innerHTML = [...(data.last_sales || []).map(item => `<p>Venda · ${new Date(item.date).toLocaleDateString("pt-BR")} <strong class="float-right">${money(item.value)}</strong></p>`), ...(data.last_expenses || []).map(item => `<p>Despesa · ${item.category} <strong class="float-right">${money(item.value)}</strong></p>`)].join("") || "Nenhuma movimentação no período.";
+        } catch (exception) {
+            error.textContent = exception.message;
+            error.classList.remove("hidden");
+        }
+    };
+
+    period.addEventListener("change", () => {
+        custom.classList.toggle("hidden", period.value !== "custom");
+        custom.classList.toggle("grid", period.value === "custom");
+        load();
+    });
+    document.getElementById("inicio")?.addEventListener("change", load);
+    document.getElementById("fim")?.addEventListener("change", load);
+    load();
 });

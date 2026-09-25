@@ -5,6 +5,7 @@ DEFAULT_SETTINGS = {
     "show_financial_dashboard": False,
     "show_expenses": False,
     "app_display_name": "Restaurant Control",
+    "logo_url": None,
 }
 
 def get_organization_settings(organization):

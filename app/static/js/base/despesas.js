@@ -13,6 +13,6 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (exception) { error.textContent = exception.message; error.classList.remove("hidden"); }
     };
     filters.addEventListener("change", load); filters.addEventListener("input", load);
-    list.addEventListener("click", async event => { const button = event.target.closest("[data-cancel]"); if (!button || !window.confirm("Cancelar esta despesa?")) return; const response = await fetch(`/despesas/${button.dataset.cancel}/cancelar`, { method: "POST", headers: { Accept: "application/json" } }); if (!response.ok) { error.textContent = "Não foi possível cancelar a despesa."; error.classList.remove("hidden"); return; } load(); });
+    list.addEventListener("click", async event => { const button = event.target.closest("[data-cancel]"); if (!button || !window.confirm("Cancelar esta despesa?")) return; const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content; const response = await fetch(`/despesas/${button.dataset.cancel}/cancelar`, { method: "POST", headers: { Accept: "application/json", "X-CSRFToken": csrfToken } }); if (!response.ok) { const data = await response.json().catch(() => ({})); error.textContent = data.error || "Não foi possível cancelar a despesa."; error.classList.remove("hidden"); return; } load(); });
     load();
 });

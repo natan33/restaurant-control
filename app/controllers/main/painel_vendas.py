@@ -148,6 +148,15 @@ def _payment_summary(venda):
     return confirmed, max(total - confirmed, Decimal("0")), status
 
 
+def _locked_sale(venda_id, organization_id):
+    """Load the tenant-scoped sale while serializing payment writers."""
+    return (
+        Venda.query.filter_by(id=venda_id, organization_id=organization_id)
+        .with_for_update()
+        .first_or_404()
+    )
+
+
 def _financial_status(total, paid):
     if paid <= 0:
         return "Pendente"
@@ -774,30 +783,25 @@ def atualizar_entrega(venda_id):
 @main.route('/api/vendas/<int:venda_id>/status/pagamento', methods=['POST'])
 @login_required
 def atualizar_pagamento(venda_id):
-    """Compatibilidade: alterna um pagamento legado integral."""
+    """Compatibilidade: settle only the remaining balance, idempotently."""
     organization = get_current_organization()
-    venda = Venda.query.filter_by(
-        id=venda_id, organization_id=organization.id
-    ).first_or_404()
-
-    _, _, status = _payment_summary(venda)
-    if status != "Pago":
-        venda.pagamentos.append(VendaPagamento(
-            organization_id=organization.id,
-            forma_pagamento="legado",
-            valor=_money(venda.valor_total),
-            status="confirmado",
+    venda = _locked_sale(venda_id, organization.id)
+    confirmed, balance, status = _payment_summary(venda)
+    payment = None
+    if balance > 0:
+        payment = VendaPagamento(
+            venda=venda, organization_id=organization.id,
+            forma_pagamento="legado", valor=balance, status="confirmado",
             observacao="Registrado pelo atalho de pagamento legado",
-        ))
+        )
+        db.session.add(payment)
         venda.status_pagamento = "Pago"
     else:
-        for payment in venda.pagamentos:
-            if payment.status == "confirmado":
-                payment.status = "cancelado"
-        venda.status_pagamento = "Pendente"
+        # Repeating the legacy action must not cancel real receipts.
+        venda.status_pagamento = "Pago"
 
     db.session.commit()
-    return jsonify({"id": venda.id, **_serialize_payments(venda),
+    return jsonify({"id": payment.id if payment else None, **_serialize_payments(venda),
                     "status_pagamento": venda.status_pagamento})
 
 
@@ -805,7 +809,6 @@ def atualizar_pagamento(venda_id):
 @login_required
 def criar_pagamento(venda_id):
     organization = get_current_organization()
-    venda = Venda.query.filter_by(id=venda_id, organization_id=organization.id).first_or_404()
     data = request.get_json(silent=True) or request.form
     forma = str(data.get("forma_pagamento", "")).lower().strip()
     status = str(data.get("status", "confirmado")).lower().strip()
@@ -817,15 +820,19 @@ def criar_pagamento(venda_id):
         value = _money(data.get("valor"))
     except (ValueError, TypeError):
         return jsonify({"error": "Valor de pagamento inválido"}), 400
-    if value <= 0 or (status == "confirmado" and _payment_summary(venda)[0] + value > _money(venda.valor_total)):
+    if value <= 0:
+        return jsonify({"error": "Valor de pagamento inválido"}), 400
+    venda = _locked_sale(venda_id, organization.id)
+    confirmed, balance, _ = _payment_summary(venda)
+    if status == "confirmado" and confirmed + value > _money(venda.valor_total):
+        db.session.rollback()
         return jsonify({"error": "Pagamento confirmado excede o valor da venda"}), 400
     payment = VendaPagamento(
         venda=venda, organization_id=organization.id, forma_pagamento=forma,
         valor=value, status=status, observacao=data.get("observacao")
     )
-    venda.pagamentos.append(payment)
-    venda.status_pagamento = "Pago" if _payment_summary(venda)[2] == "Pago" else "Pendente"
     db.session.add(payment)
+    venda.status_pagamento = "Pago" if _payment_summary(venda)[2] == "Pago" else "Pendente"
     db.session.commit()
     return jsonify({"id": payment.id, **_serialize_payments(venda), "status_pagamento": venda.status_pagamento}), 201
 

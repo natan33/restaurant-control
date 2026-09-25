@@ -7,6 +7,7 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
 from zipfile import ZipFile
+from datetime import date, datetime, timezone
 from jinja2 import FileSystemLoader
 
 from flask import Flask, g, session
@@ -18,6 +19,7 @@ from app.models.auth.user import User
 from app.models.pages.gerenciamento_vendas import Produto, Venda, VendaItem, VendaPagamento, Vendedor
 from app.models.pages.financeiro import Compra, CompraItem
 from app.models.tenancy import Organization, OrganizationUser
+from app.core.timezone import period_local_naive_bounds, period_utc_naive_bounds
 
 
 class TenancyFoundationTestCase(unittest.TestCase):
@@ -441,6 +443,99 @@ class TenancyFoundationTestCase(unittest.TestCase):
         self.assertEqual(excess.status_code, 400)
         self.assertEqual(zero.status_code, 400)
         self.assertEqual(foreign.status_code, 404)
+
+    def test_payment_writes_are_idempotent_and_never_exceed_sale_total(self):
+        user_id = self.create_user_with_memberships(membership_count=2)
+        with self.app.app_context():
+            organizations = Organization.query.order_by(Organization.id).all()
+            first, second = organizations
+            product = Produto(organization_id=first.id, nome="Prato", preco=90)
+            seller = Vendedor(organization_id=first.id, nome="Vendedor")
+            db.session.add_all([product, seller])
+            db.session.flush()
+            sale = Venda(
+                organization_id=first.id, produto_id=product.id, vendedor_id=seller.id,
+                comprador_nome="Cliente", quantidade=1, tipo_vendedor="Membro",
+                status_pagamento="Pendente", valor_total=90,
+            )
+            db.session.add(sale)
+            db.session.commit()
+            sale_id = sale.id
+            foreign_product = Produto(organization_id=second.id, nome="Outro", preco=90)
+            foreign_seller = Vendedor(organization_id=second.id, nome="Outro")
+            db.session.add_all([foreign_product, foreign_seller])
+            db.session.flush()
+            foreign_sale = Venda(
+                organization_id=second.id, produto_id=foreign_product.id,
+                vendedor_id=foreign_seller.id, comprador_nome="Outro", quantidade=1,
+                tipo_vendedor="Membro", status_pagamento="Pendente", valor_total=90,
+            )
+            db.session.add(foreign_sale)
+            db.session.commit()
+            foreign_sale_id = foreign_sale.id
+            first_organization_id = first.id
+
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = first_organization_id
+            first_payment = client.post(
+                f"/api/vendas/{sale_id}/pagamentos",
+                json={"forma_pagamento": "pix", "valor": "90"},
+            )
+            second_payment = client.post(
+                f"/api/vendas/{sale_id}/pagamentos",
+                json={"forma_pagamento": "pix", "valor": "90"},
+            )
+            repeated_legacy = client.post(f"/api/vendas/{sale_id}/status/pagamento")
+            foreign = client.post(
+                f"/api/vendas/{foreign_sale_id}/pagamentos",
+                json={"forma_pagamento": "pix", "valor": "1"},
+            )
+
+        self.assertEqual(first_payment.status_code, 201)
+        self.assertEqual(second_payment.status_code, 400)
+        self.assertEqual(repeated_legacy.status_code, 200)
+        self.assertIsNone(repeated_legacy.json["id"])
+        self.assertEqual(foreign.status_code, 404)
+        with self.app.app_context():
+            sale = db.session.get(Venda, sale_id)
+            self.assertEqual(sum((p.valor for p in sale.pagamentos if p.status == "confirmado"), Decimal("0")), Decimal("90.000000"))
+
+    def test_legacy_payment_settles_only_remaining_balance(self):
+        user_id = self.create_user_with_memberships()
+        with self.app.app_context():
+            organization = Organization.query.one()
+            product = Produto(organization_id=organization.id, nome="Prato", preco=90)
+            seller = Vendedor(organization_id=organization.id, nome="Vendedor")
+            db.session.add_all([product, seller])
+            db.session.flush()
+            sale = Venda(
+                organization_id=organization.id, produto_id=product.id, vendedor_id=seller.id,
+                comprador_nome="Cliente", quantidade=2, tipo_vendedor="Membro",
+                status_pagamento="Pendente", valor_total=90,
+            )
+            sale.items = [
+                VendaItem(organization_id=organization.id, produto_id=product.id, quantidade=1, preco_unitario=45, subtotal=45),
+                VendaItem(organization_id=organization.id, produto_id=product.id, quantidade=1, preco_unitario=45, subtotal=45),
+            ]
+            sale.pagamentos = [VendaPagamento(organization_id=organization.id, forma_pagamento="pix", valor=30, status="confirmado")]
+            db.session.add(sale)
+            db.session.commit()
+            sale_id = sale.id
+            organization_id = organization.id
+        with self.app.test_client() as client:
+            with client.session_transaction() as browser_session:
+                browser_session["_user_id"] = str(user_id)
+                browser_session["organization_id"] = organization_id
+            response = client.post(f"/api/vendas/{sale_id}/status/pagamento")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["total_pago"], 90.0)
+        with self.app.app_context():
+            sale = db.session.get(Venda, sale_id)
+            payments = [p for p in sale.pagamentos if p.status == "confirmado"]
+            self.assertEqual(len(payments), 2)
+            self.assertEqual(sum((p.valor for p in payments), Decimal("0")), Decimal("90.000000"))
 
     def test_payment_model_rejects_non_positive_value_and_foreign_sale(self):
         with self.app.app_context():
@@ -1068,7 +1163,7 @@ class TenancyFoundationTestCase(unittest.TestCase):
         user_id = self.create_user_with_memberships()
         with self.app.app_context():
             organization = Organization.query.one()
-            organization.settings = {"dashboard_mode": "restaurant", "show_financial_dashboard": True, "app_display_name": "Graças na Mesa"}
+            organization.settings = {"dashboard_mode": "restaurant", "show_financial_dashboard": True, "theme_key": "gracas-na-mesa", "app_display_name": "Graças na Mesa"}
             OrganizationUser.query.one().role = "admin"
             product = Produto(organization_id=organization.id, nome="Prato", preco=20)
             seller = Vendedor(organization_id=organization.id, nome="Vendedor")
@@ -1094,6 +1189,26 @@ class TenancyFoundationTestCase(unittest.TestCase):
         self.assertEqual(response.json["cards"]["result"], "13.000000")
         self.assertEqual(home.status_code, 200)
         self.assertIn("Graças na Mesa".encode(), home.data)
+        self.assertIn('data-theme="gracas-na-mesa"'.encode(), home.data)
+
+    def test_restaurant_dashboard_filter_script_handles_empty_and_repeated_ranges(self):
+        with open("app/static/js/base/dashboard_restaurante.js", encoding="utf-8") as script:
+            source = script.read()
+        self.assertIn('period.value === "previous"', source)
+        self.assertIn('period.value === "custom"', source)
+        self.assertIn('charts.get(id)?.destroy()', source)
+        self.assertNotIn("chart.canvas.id", source)
+        self.assertIn('data.daily || { sales: [], expenses: [] }', source)
+
+    def test_operational_period_converts_salvador_midnight_to_utc(self):
+        local_start, local_end = period_local_naive_bounds(date(2026, 9, 24), date(2026, 9, 24))
+        utc_start, utc_end = period_utc_naive_bounds(date(2026, 9, 24), date(2026, 9, 24))
+        self.assertEqual((local_start, local_end), (datetime(2026, 9, 24), datetime(2026, 9, 25)))
+        self.assertEqual((utc_start, utc_end), (datetime(2026, 9, 24, 3), datetime(2026, 9, 25, 3)))
+        self.assertTrue(local_start <= datetime(2026, 9, 24, 23, 59) < local_end)
+        self.assertFalse(local_start <= datetime(2026, 9, 25, 0, 1) < local_end)
+        self.assertTrue(utc_start <= datetime(2026, 9, 25, 1, 33) < utc_end)
+        self.assertFalse(utc_start <= datetime(2026, 9, 25, 3, 1) < utc_end)
 
 if __name__ == "__main__":
     unittest.main()

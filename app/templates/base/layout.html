@@ -1,15 +1,17 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-br" data-theme="{{ (g.organization_settings|default({})).get('theme_key', 'default') }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <script>tailwind.config={darkMode:"class",theme:{extend:{colors:{primary:"#f6a50e",secondary:"#2c3e50","background-light":"#f8f7f5","background-dark":"#221c10"},fontFamily:{display:["Manrope","sans-serif"]}}}};</script>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
     <style>
-        :root { --color-primary:#f6a50e; --color-secondary:#2c3e50; --color-accent:#f6a50e; --color-background:#f8f7f5; --color-surface:#fff; --color-text:#2c3e50; --color-text-muted:#64748b; --color-border:#e2e8f0; }
         body { font-family:'Manrope',sans-serif; background:var(--color-background); color:var(--color-text); }
+        @media (min-width: 1024px) { body { padding-top: 3.5rem; } }
         .material-symbols-outlined { font-family:'Material Symbols Outlined'; font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24; font-weight:normal; font-style:normal; font-size:24px; line-height:1; display:inline-block; white-space:nowrap; direction:ltr; -webkit-font-feature-settings:'liga'; -webkit-font-smoothing:antialiased; font-feature-settings:'liga'; }
     </style>
     {% block head %}{% endblock %}

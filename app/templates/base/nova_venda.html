@@ -14,6 +14,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
         rel="stylesheet" />
+    <link href="{{ url_for('static', filename='css/theme.css') }}" rel="stylesheet" />
     <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
@@ -57,7 +58,7 @@
     </style>
 </head>
 
-<body class="bg-background-light dark:bg-background-dark min-h-screen text-secondary font-display">
+<body data-theme="{{ (g.organization_settings|default({})).get('theme_key', 'default') }}" class="bg-background-light dark:bg-background-dark min-h-screen text-secondary font-display">
     <form method="POST"
       action="{{ url_for('main.editar_venda', venda_id=venda.id) if venda else url_for('main.nova_venda') }}"
       id="form-nova-venda"
